@@ -1,0 +1,725 @@
+import { invoke } from "@tauri-apps/api/core";
+import "./styles.css";
+import { bindingRecord, cleanHotkey, eventToSpineHotkey, findConflicts } from "./hotkeys";
+import type {
+  HotkeyEntry,
+  HotkeySnapshot,
+  PresetPayload,
+  PresetSummary,
+  SaveHotkeysResult,
+} from "./types";
+
+document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">S</div>
+        <div>
+          <h1>Spine Hotkey Studio</h1>
+          <p id="target-path" class="target-path">Đang kết nối hotkeys.txt…</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="reload-button" class="button button-secondary" type="button">Tải lại</button>
+        <button id="apply-button" class="button button-primary" type="button">Áp dụng vào Spine</button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="preset-panel surface">
+        <div class="panel-heading">
+          <span class="eyebrow">PRESET</span>
+          <h2>Các bộ phím của bạn</h2>
+        </div>
+        <div id="preset-list" class="preset-list" role="listbox" aria-label="Danh sách preset">
+          <div class="empty-state compact">Chưa có preset</div>
+        </div>
+        <p id="preset-meta" class="preset-meta">Chỉnh hotkey rồi lưu bộ đầu tiên.</p>
+        <button id="load-preset-button" class="button button-primary button-wide" type="button">Nạp preset đã chọn</button>
+        <button id="create-preset-button" class="button button-secondary button-wide" type="button">Lưu thành preset mới</button>
+        <div class="preset-actions">
+          <button id="rename-preset-button" class="button button-ghost" type="button">Đổi tên</button>
+          <button id="duplicate-preset-button" class="button button-ghost" type="button">Sao chép</button>
+          <button id="delete-preset-button" class="button button-danger" type="button">Xóa preset</button>
+        </div>
+      </aside>
+
+      <section class="hotkey-workspace">
+        <div class="filterbar">
+          <label class="search-field control-rounded">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="search-input" type="search" placeholder="Tìm lệnh hoặc tổ hợp phím…" autocomplete="off" />
+            <kbd>Ctrl F</kbd>
+          </label>
+          <label class="select-wrap control-rounded">
+            <select id="group-select" aria-label="Lọc theo nhóm">
+              <option>Tất cả nhóm</option>
+            </select>
+          </label>
+          <label class="toggle-label">
+            <input id="assigned-only" type="checkbox" />
+            <span class="toggle" aria-hidden="true"></span>
+            <span>Chỉ phím đã gán</span>
+          </label>
+        </div>
+
+        <div class="table-surface surface">
+          <div class="table-head hotkey-grid" aria-hidden="true">
+            <span>NHÓM</span><span>LỆNH</span><span>HOTKEY</span><span>TRẠNG THÁI</span>
+          </div>
+          <div id="hotkey-list" class="hotkey-list" role="listbox" aria-label="Danh sách hotkey">
+            <div class="loading-state"><span class="spinner"></span>Đang tải hotkey…</div>
+          </div>
+        </div>
+
+        <section class="editor-card surface" aria-label="Chỉnh sửa hotkey">
+          <div class="editor-heading">
+            <div>
+              <h2 id="selection-title">Chọn một lệnh để chỉnh sửa</h2>
+              <p id="selection-meta">Bạn có thể tìm theo tên lệnh hoặc hotkey.</p>
+            </div>
+            <span id="dirty-pill" class="dirty-pill" hidden>ĐÃ SỬA</span>
+          </div>
+          <div class="editor-controls">
+            <input id="hotkey-input" class="hotkey-input control-rounded" type="text" disabled aria-label="Hotkey hiện tại" />
+            <button id="record-button" class="button button-primary" type="button" disabled>Ghi tổ hợp phím</button>
+            <button id="clear-button" class="button button-secondary" type="button" disabled>Xóa gán</button>
+            <button id="restore-button" class="button button-secondary" type="button" disabled>Khôi phục</button>
+          </div>
+          <p id="conflict-message" class="helper-text">Chưa có lệnh được chọn.</p>
+        </section>
+      </section>
+    </section>
+
+    <footer class="statusbar">
+      <div class="status-message"><span id="status-dot" class="status-dot success"></span><span id="status-text">Sẵn sàng</span></div>
+      <span id="count-text">0 lệnh</span>
+    </footer>
+  </main>
+
+  <div id="dialog-backdrop" class="dialog-backdrop" hidden>
+    <section class="dialog surface" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <div id="dialog-icon" class="dialog-icon">S</div>
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-message"></p>
+      <input id="dialog-input" class="dialog-input control-rounded" type="text" hidden />
+      <div class="dialog-actions">
+        <button id="dialog-cancel" class="button button-secondary" type="button">Hủy</button>
+        <button id="dialog-confirm" class="button button-primary" type="button">Xác nhận</button>
+      </div>
+    </section>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+`;
+
+const $ = <T extends HTMLElement>(selector: string): T => {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Không tìm thấy phần tử ${selector}`);
+  return element;
+};
+
+const targetPath = $("#target-path");
+const reloadButton = $("#reload-button") as HTMLButtonElement;
+const applyButton = $("#apply-button") as HTMLButtonElement;
+const presetList = $("#preset-list");
+const presetMeta = $("#preset-meta");
+const searchInput = $("#search-input") as HTMLInputElement;
+const groupSelect = $("#group-select") as HTMLSelectElement;
+const assignedOnly = $("#assigned-only") as HTMLInputElement;
+const hotkeyList = $("#hotkey-list");
+const hotkeyInput = $("#hotkey-input") as HTMLInputElement;
+const selectionTitle = $("#selection-title");
+const selectionMeta = $("#selection-meta");
+const dirtyPill = $("#dirty-pill");
+const recordButton = $("#record-button") as HTMLButtonElement;
+const clearButton = $("#clear-button") as HTMLButtonElement;
+const restoreButton = $("#restore-button") as HTMLButtonElement;
+const conflictMessage = $("#conflict-message");
+const statusDot = $("#status-dot");
+const statusText = $("#status-text");
+const countText = $("#count-text");
+
+let snapshot: HotkeySnapshot | null = null;
+let selectedIndex: number | null = null;
+let presets: PresetSummary[] = [];
+let selectedPresetFile: string | null = null;
+let recording = false;
+
+function isDirty(): boolean {
+  return snapshot?.entries.some((entry) => entry.value !== entry.originalValue) ?? false;
+}
+
+function selectedEntry(): HotkeyEntry | null {
+  if (!snapshot || selectedIndex === null) return null;
+  return snapshot.entries[selectedIndex] ?? null;
+}
+
+function setStatus(message: string, tone: "success" | "warning" | "error" = "success"): void {
+  statusText.textContent = message;
+  statusDot.className = `status-dot ${tone}`;
+}
+
+function toast(message: string, tone: "success" | "warning" | "error" = "success"): void {
+  const region = $("#toast-region");
+  const item = document.createElement("div");
+  item.className = `toast ${tone}`;
+  item.textContent = message;
+  region.append(item);
+  requestAnimationFrame(() => item.classList.add("visible"));
+  window.setTimeout(() => {
+    item.classList.remove("visible");
+    window.setTimeout(() => item.remove(), 220);
+  }, 3400);
+}
+
+function errorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw.replace(/^(SPINE_RUNNING|FILE_CHANGED|PRESET_EXISTS):/, "");
+}
+
+interface DialogOptions {
+  title: string;
+  message: string;
+  confirmText?: string;
+  inputValue?: string;
+  danger?: boolean;
+}
+
+function openDialog(options: DialogOptions): Promise<boolean | string | null> {
+  const backdrop = $("#dialog-backdrop");
+  const title = $("#dialog-title");
+  const message = $("#dialog-message");
+  const icon = $("#dialog-icon");
+  const input = $("#dialog-input") as HTMLInputElement;
+  const cancel = $("#dialog-cancel") as HTMLButtonElement;
+  const confirm = $("#dialog-confirm") as HTMLButtonElement;
+  title.textContent = options.title;
+  message.textContent = options.message;
+  confirm.textContent = options.confirmText ?? "Xác nhận";
+  confirm.className = `button ${options.danger ? "button-danger" : "button-primary"}`;
+  icon.className = `dialog-icon ${options.danger ? "danger" : ""}`;
+  const hasInput = options.inputValue !== undefined;
+  input.hidden = !hasInput;
+  input.value = options.inputValue ?? "";
+  backdrop.hidden = false;
+
+  return new Promise((resolve) => {
+    const close = (value: boolean | string | null): void => {
+      backdrop.hidden = true;
+      cancel.removeEventListener("click", onCancel);
+      confirm.removeEventListener("click", onConfirm);
+      backdrop.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKeydown);
+      resolve(value);
+    };
+    const onCancel = (): void => close(null);
+    const onConfirm = (): void => {
+      if (hasInput && !input.value.trim()) {
+        input.classList.add("invalid");
+        input.focus();
+        return;
+      }
+      close(hasInput ? input.value.trim() : true);
+    };
+    const onBackdrop = (event: Event): void => {
+      if (event.target === backdrop) close(null);
+    };
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") close(null);
+      if (event.key === "Enter") onConfirm();
+    };
+    cancel.addEventListener("click", onCancel);
+    confirm.addEventListener("click", onConfirm);
+    backdrop.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKeydown);
+    input.classList.remove("invalid");
+    window.setTimeout(() => (hasInput ? input.select() : confirm.focus()), 20);
+  });
+}
+
+function refreshGroups(): void {
+  if (!snapshot) return;
+  const current = groupSelect.value;
+  const groups = [...new Set(snapshot.entries.map((entry) => entry.groupLabel))];
+  groupSelect.replaceChildren();
+  ["Tất cả nhóm", ...groups].forEach((group) => {
+    const option = document.createElement("option");
+    option.value = group;
+    option.textContent = group;
+    groupSelect.append(option);
+  });
+  groupSelect.value = groups.includes(current) ? current : "Tất cả nhóm";
+}
+
+function refreshTable(): void {
+  if (!snapshot) return;
+  const query = searchInput.value.trim().toLocaleLowerCase();
+  const group = groupSelect.value;
+  const conflicts = findConflicts(snapshot.entries);
+  const conflictIds = new Set([...conflicts.values()].flat());
+  const fragment = document.createDocumentFragment();
+  let shown = 0;
+  let assigned = 0;
+
+  snapshot.entries.forEach((entry, index) => {
+    if (entry.value) assigned += 1;
+    if (group !== "Tất cả nhóm" && entry.groupLabel !== group) return;
+    if (assignedOnly.checked && !entry.value) return;
+    const haystack = `${entry.groupLabel} ${entry.action} ${entry.value}`.toLocaleLowerCase();
+    if (query && !haystack.includes(query)) return;
+
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "hotkey-row hotkey-grid";
+    row.dataset.index = String(index);
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(index === selectedIndex));
+    if (index === selectedIndex) row.classList.add("selected");
+    if (conflictIds.has(entry.entryId)) row.classList.add("conflict");
+    if (entry.value !== entry.originalValue) row.classList.add("changed");
+
+    const groupCell = document.createElement("span");
+    groupCell.className = "group-cell";
+    groupCell.textContent = entry.groupLabel;
+    const actionCell = document.createElement("span");
+    actionCell.className = "action-cell";
+    actionCell.textContent = entry.action;
+    const keyCell = document.createElement("span");
+    keyCell.className = "key-cell";
+    const keycap = document.createElement("kbd");
+    keycap.textContent = entry.value || "Chưa gán";
+    if (!entry.value) keycap.classList.add("empty");
+    keyCell.append(keycap);
+    const stateCell = document.createElement("span");
+    stateCell.className = "state-cell";
+    stateCell.textContent = conflictIds.has(entry.entryId)
+      ? "Trùng phím"
+      : entry.value !== entry.originalValue
+        ? "Đã sửa"
+        : "";
+    row.append(groupCell, actionCell, keyCell, stateCell);
+    row.addEventListener("click", () => selectEntry(index));
+    row.addEventListener("dblclick", () => startRecording());
+    fragment.append(row);
+    shown += 1;
+  });
+
+  hotkeyList.replaceChildren(fragment);
+  if (!shown) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Không tìm thấy lệnh phù hợp.";
+    hotkeyList.append(empty);
+  }
+  countText.textContent = `Hiển thị ${shown}/${snapshot.entries.length} · Đã gán ${assigned}`;
+  updateDirtyState();
+}
+
+function selectEntry(index: number): void {
+  selectedIndex = index;
+  stopRecording();
+  refreshEditor();
+  refreshTable();
+}
+
+function refreshEditor(): void {
+  const entry = selectedEntry();
+  const disabled = !entry;
+  hotkeyInput.disabled = disabled;
+  recordButton.disabled = disabled;
+  clearButton.disabled = disabled;
+  restoreButton.disabled = disabled;
+  if (!entry) {
+    selectionTitle.textContent = "Chọn một lệnh để chỉnh sửa";
+    selectionMeta.textContent = "Bạn có thể tìm theo tên lệnh hoặc hotkey.";
+    hotkeyInput.value = "";
+    conflictMessage.textContent = "Chưa có lệnh được chọn.";
+    dirtyPill.hidden = true;
+    return;
+  }
+  selectionTitle.textContent = entry.action;
+  selectionMeta.textContent = `${entry.groupLabel}${entry.actionOccurrence > 1 ? ` · lựa chọn ${entry.actionOccurrence}` : ""}`;
+  hotkeyInput.value = entry.value;
+  dirtyPill.hidden = entry.value === entry.originalValue;
+  updateConflictMessage(entry);
+}
+
+function updateConflictMessage(entry: HotkeyEntry): void {
+  if (!snapshot) return;
+  if (!entry.value) {
+    conflictMessage.className = "helper-text";
+    conflictMessage.textContent = "Chưa gán phím. Nhấn “Ghi tổ hợp phím” để nhập nhanh.";
+    return;
+  }
+  const conflicts = findConflicts(snapshot.entries);
+  const related = [...conflicts.values()].find((ids) => ids.includes(entry.entryId));
+  if (related) {
+    const names = related
+      .filter((id) => id !== entry.entryId)
+      .map((id) => snapshot?.entries.find((candidate) => candidate.entryId === id)?.action)
+      .filter(Boolean)
+      .slice(0, 3);
+    conflictMessage.className = "helper-text warning";
+    conflictMessage.textContent = `Cảnh báo: trùng với ${names.join(", ")}`;
+  } else {
+    conflictMessage.className = "helper-text success";
+    conflictMessage.textContent = "Không phát hiện xung đột phím.";
+  }
+}
+
+function updateDirtyState(): void {
+  if (!snapshot) return;
+  const changed = snapshot.entries.filter((entry) => entry.value !== entry.originalValue).length;
+  applyButton.classList.toggle("has-changes", changed > 0);
+  if (changed > 0) setStatus(`${changed} thay đổi chưa áp dụng`, "warning");
+}
+
+function commitManualValue(): void {
+  const entry = selectedEntry();
+  if (!entry) return;
+  entry.value = cleanHotkey(hotkeyInput.value);
+  hotkeyInput.value = entry.value;
+  refreshEditor();
+  refreshTable();
+}
+
+function startRecording(): void {
+  if (!selectedEntry()) return;
+  recording = true;
+  recordButton.textContent = "Đang nghe phím…";
+  recordButton.classList.add("recording");
+  conflictMessage.className = "helper-text recording";
+  conflictMessage.textContent = "Nhấn tổ hợp mong muốn. Ctrl, Shift và Alt đều được hỗ trợ.";
+  hotkeyInput.focus();
+}
+
+function stopRecording(): void {
+  recording = false;
+  recordButton.textContent = "Ghi tổ hợp phím";
+  recordButton.classList.remove("recording");
+}
+
+async function loadDocument(force = false): Promise<void> {
+  if (!force && isDirty()) {
+    const confirmed = await openDialog({
+      title: "Tải lại hotkeys.txt?",
+      message: "Các thay đổi chưa áp dụng sẽ bị bỏ.",
+      confirmText: "Tải lại",
+    });
+    if (!confirmed) return;
+  }
+  reloadButton.disabled = true;
+  setStatus("Đang đọc hotkeys.txt…");
+  try {
+    snapshot = await invoke<HotkeySnapshot>("load_hotkeys");
+    selectedIndex = null;
+    targetPath.textContent = snapshot.path;
+    searchInput.value = "";
+    groupSelect.value = "Tất cả nhóm";
+    refreshGroups();
+    refreshTable();
+    refreshEditor();
+    setStatus(`Đã đọc ${snapshot.entries.length} lệnh`);
+  } catch (error) {
+    const message = errorMessage(error);
+    setStatus(message, "error");
+    await openDialog({ title: "Không thể mở hotkeys.txt", message, confirmText: "Đóng" });
+  } finally {
+    reloadButton.disabled = false;
+  }
+}
+
+async function applyChanges(): Promise<void> {
+  if (!snapshot) return;
+  commitManualValue();
+  if (!isDirty()) {
+    toast("Không có thay đổi để áp dụng", "warning");
+    return;
+  }
+  const conflictCount = findConflicts(snapshot.entries).size;
+  if (conflictCount) {
+    const confirmed = await openDialog({
+      title: "Có hotkey bị trùng",
+      message: `Đang có ${conflictCount} tổ hợp phím bị trùng. Bạn vẫn muốn áp dụng?`,
+      confirmText: "Vẫn áp dụng",
+    });
+    if (!confirmed) return;
+  }
+  applyButton.disabled = true;
+  setStatus("Đang tạo backup và áp dụng…");
+  try {
+    const result = await invoke<SaveHotkeysResult>("save_hotkeys", {
+      request: {
+        sourceToken: snapshot.sourceToken,
+        bindings: bindingRecord(snapshot.entries),
+      },
+    });
+    snapshot.sourceToken = result.sourceToken;
+    snapshot.entries.forEach((entry) => (entry.originalValue = entry.value));
+    refreshTable();
+    refreshEditor();
+    setStatus(`Đã áp dụng ${result.updatedCount} thay đổi`);
+    toast("Đã cập nhật hotkeys.txt và tạo backup");
+  } catch (error) {
+    const raw = String(error);
+    const message = errorMessage(error);
+    setStatus(message, "error");
+    await openDialog({
+      title: raw.startsWith("SPINE_RUNNING:") ? "Hãy đóng Spine" : "Chưa thể áp dụng",
+      message,
+      confirmText: "Đã hiểu",
+    });
+    if (raw.startsWith("FILE_CHANGED:")) await loadDocument(true);
+  } finally {
+    applyButton.disabled = false;
+  }
+}
+
+function renderPresets(): void {
+  presetList.replaceChildren();
+  if (!presets.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state compact";
+    empty.textContent = "Chưa có preset";
+    presetList.append(empty);
+    presetMeta.textContent = "Chỉnh hotkey rồi lưu bộ đầu tiên.";
+    selectedPresetFile = null;
+    return;
+  }
+  presets.forEach((preset) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "preset-item";
+    if (preset.fileName === selectedPresetFile) button.classList.add("selected");
+    const mark = document.createElement("span");
+    mark.className = "preset-mark";
+    mark.textContent = preset.name.slice(0, 1).toLocaleUpperCase();
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = preset.name;
+    const count = document.createElement("small");
+    count.textContent = `${preset.bindingCount} lệnh`;
+    copy.append(name, count);
+    button.append(mark, copy);
+    button.addEventListener("click", () => {
+      selectedPresetFile = preset.fileName;
+      renderPresets();
+      const date = new Date(preset.createdAt);
+      presetMeta.textContent = `${preset.bindingCount} lệnh · ${date.toLocaleString("vi-VN")}`;
+    });
+    button.addEventListener("dblclick", () => void loadSelectedPreset());
+    presetList.append(button);
+  });
+}
+
+async function refreshPresets(preferred?: string): Promise<void> {
+  try {
+    presets = await invoke<PresetSummary[]>("list_presets");
+    if (preferred && presets.some((preset) => preset.fileName === preferred)) selectedPresetFile = preferred;
+    else if (selectedPresetFile && !presets.some((preset) => preset.fileName === selectedPresetFile)) selectedPresetFile = null;
+    renderPresets();
+  } catch (error) {
+    toast(errorMessage(error), "error");
+  }
+}
+
+function currentPreset(): PresetSummary | null {
+  return presets.find((preset) => preset.fileName === selectedPresetFile) ?? null;
+}
+
+async function createPreset(): Promise<void> {
+  if (!snapshot) return;
+  const name = await openDialog({
+    title: "Lưu preset mới",
+    message: "Đặt tên dễ nhớ cho bộ hotkey hiện tại.",
+    confirmText: "Lưu preset",
+    inputValue: "Preset mới",
+  });
+  if (typeof name !== "string") return;
+  const request = {
+    name,
+    sourceFile: snapshot.path.split(/[\\/]/).pop() ?? "hotkeys.txt",
+    structureFingerprint: snapshot.structureFingerprint,
+    bindings: bindingRecord(snapshot.entries),
+    overwrite: false,
+  };
+  try {
+    const summary = await invoke<PresetSummary>("save_preset", { request });
+    await refreshPresets(summary.fileName);
+    toast(`Đã lưu preset “${summary.name}”`);
+  } catch (error) {
+    if (String(error).startsWith("PRESET_EXISTS:")) {
+      const overwrite = await openDialog({
+        title: "Preset đã tồn tại",
+        message: `Bạn có muốn ghi đè preset “${name}”?`,
+        confirmText: "Ghi đè",
+      });
+      if (overwrite) {
+        request.overwrite = true;
+        const summary = await invoke<PresetSummary>("save_preset", { request });
+        await refreshPresets(summary.fileName);
+        toast(`Đã cập nhật preset “${summary.name}”`);
+      }
+    } else toast(errorMessage(error), "error");
+  }
+}
+
+async function loadSelectedPreset(): Promise<void> {
+  if (!snapshot || !selectedPresetFile) {
+    toast("Hãy chọn một preset", "warning");
+    return;
+  }
+  try {
+    const payload = await invoke<PresetPayload>("load_preset", { fileName: selectedPresetFile });
+    if (payload.structureFingerprint !== snapshot.structureFingerprint) {
+      const confirmed = await openDialog({
+        title: "Preset khác phiên bản",
+        message: "Tool chỉ nạp những lệnh còn khớp với file hiện tại. Tiếp tục?",
+        confirmText: "Nạp phần khớp",
+      });
+      if (!confirmed) return;
+    }
+    let matched = 0;
+    snapshot.entries.forEach((entry) => {
+      if (Object.hasOwn(payload.bindings, entry.entryId)) {
+        entry.value = cleanHotkey(payload.bindings[entry.entryId]);
+        matched += 1;
+      }
+    });
+    refreshTable();
+    refreshEditor();
+    setStatus(`Đã nạp ${matched} lệnh từ preset`, "warning");
+    toast(`Đã nạp preset “${payload.name}”`);
+  } catch (error) {
+    toast(errorMessage(error), "error");
+  }
+}
+
+async function renamePreset(): Promise<void> {
+  const preset = currentPreset();
+  if (!preset) return toast("Hãy chọn một preset", "warning");
+  const newName = await openDialog({
+    title: "Đổi tên preset",
+    message: "Nhập tên mới cho bộ hotkey.",
+    confirmText: "Đổi tên",
+    inputValue: preset.name,
+  });
+  if (typeof newName !== "string" || newName === preset.name) return;
+  try {
+    const summary = await invoke<PresetSummary>("rename_preset", {
+      request: { fileName: preset.fileName, newName },
+    });
+    await refreshPresets(summary.fileName);
+    toast(`Đã đổi tên thành “${summary.name}”`);
+  } catch (error) {
+    toast(errorMessage(error), "error");
+  }
+}
+
+async function duplicatePreset(): Promise<void> {
+  const preset = currentPreset();
+  if (!preset) return toast("Hãy chọn một preset", "warning");
+  const newName = await openDialog({
+    title: "Sao chép preset",
+    message: "Đặt tên cho bản sao.",
+    confirmText: "Tạo bản sao",
+    inputValue: `${preset.name} - Copy`,
+  });
+  if (typeof newName !== "string") return;
+  try {
+    const summary = await invoke<PresetSummary>("duplicate_preset", {
+      request: { fileName: preset.fileName, newName },
+    });
+    await refreshPresets(summary.fileName);
+    toast(`Đã tạo “${summary.name}”`);
+  } catch (error) {
+    toast(errorMessage(error), "error");
+  }
+}
+
+async function deletePreset(): Promise<void> {
+  const preset = currentPreset();
+  if (!preset) return toast("Hãy chọn một preset", "warning");
+  const confirmed = await openDialog({
+    title: "Xóa preset?",
+    message: `Preset “${preset.name}” sẽ bị xóa. hotkeys.txt không bị ảnh hưởng.`,
+    confirmText: "Xóa preset",
+    danger: true,
+  });
+  if (!confirmed) return;
+  try {
+    await invoke("delete_preset", { fileName: preset.fileName });
+    selectedPresetFile = null;
+    await refreshPresets();
+    toast(`Đã xóa preset “${preset.name}”`);
+  } catch (error) {
+    toast(errorMessage(error), "error");
+  }
+}
+
+searchInput.addEventListener("input", refreshTable);
+groupSelect.addEventListener("change", refreshTable);
+assignedOnly.addEventListener("change", refreshTable);
+reloadButton.addEventListener("click", () => void loadDocument());
+applyButton.addEventListener("click", () => void applyChanges());
+hotkeyInput.addEventListener("change", commitManualValue);
+hotkeyInput.addEventListener("keydown", (event) => {
+  if (!recording && event.key === "Enter") commitManualValue();
+});
+recordButton.addEventListener("click", () => (recording ? stopRecording() : startRecording()));
+clearButton.addEventListener("click", () => {
+  const entry = selectedEntry();
+  if (!entry) return;
+  entry.value = "";
+  refreshEditor();
+  refreshTable();
+});
+restoreButton.addEventListener("click", () => {
+  const entry = selectedEntry();
+  if (!entry) return;
+  entry.value = entry.originalValue;
+  refreshEditor();
+  refreshTable();
+});
+$("#load-preset-button").addEventListener("click", () => void loadSelectedPreset());
+$("#create-preset-button").addEventListener("click", () => void createPreset());
+$("#rename-preset-button").addEventListener("click", () => void renamePreset());
+$("#duplicate-preset-button").addEventListener("click", () => void duplicatePreset());
+$("#delete-preset-button").addEventListener("click", () => void deletePreset());
+
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (!recording) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const hotkey = eventToSpineHotkey(event);
+    if (hotkey === null) return;
+    if (!hotkey) {
+      toast(`Phím ${event.code} chưa được hỗ trợ; bạn có thể nhập tay`, "warning");
+      return;
+    }
+    const entry = selectedEntry();
+    if (!entry) return;
+    entry.value = hotkey;
+    stopRecording();
+    refreshEditor();
+    refreshTable();
+    setStatus(`Đã ghi tổ hợp ${hotkey}`, "warning");
+  },
+  true,
+);
+
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key.toLocaleLowerCase() === "f" && !recording) {
+    event.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  }
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (isDirty()) event.preventDefault();
+});
+
+void Promise.all([loadDocument(true), refreshPresets()]);

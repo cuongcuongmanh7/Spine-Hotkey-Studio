@@ -1,44 +1,67 @@
 # Spine Hotkey Studio
 
-Tool desktop nhỏ gọn để chỉnh nhanh `hotkeys.txt` của Spine, phát hiện phím trùng và quản lý nhiều bộ preset riêng.
+Ứng dụng desktop Tauri 2 để chỉnh nhanh `hotkeys.txt` của Spine, phát hiện phím trùng và quản lý nhiều bộ preset riêng. Giao diện dark mode hiện đại, bo tròn và không cần cài Python.
 
-Repository có thể đặt ở bất kỳ đâu. Tool luôn tìm file Spine mặc định qua `%USERPROFILE%\Spine\hotkeys.txt`, không phụ thuộc vị trí thư mục ứng dụng.
+## Tính năng
 
-## Mở tool
+- Tìm kiếm và lọc hotkey theo nhóm.
+- Chọn lệnh rồi nhấn trực tiếp tổ hợp phím cần gán.
+- Nhập tay cú pháp phím đặc biệt của Spine.
+- Cảnh báo hotkey trùng trước khi áp dụng.
+- Tạo, nạp, đổi tên, sao chép và xóa preset.
+- Đọc được preset JSON tạo bởi phiên bản Python cũ.
+- Tạo backup tự động và thay file theo cơ chế atomic của Windows.
+- Từ chối ghi khi Spine đang chạy hoặc `hotkeys.txt` vừa bị ứng dụng khác thay đổi.
+- Bảo toàn thứ tự dòng, nhóm/lệnh trùng và CRLF của file Spine.
 
-Nhấp đúp `SpineHotkeyStudio.exe` (hoặc `launch.bat` nếu cần). Tool mặc định đọc file:
+## Sử dụng
+
+Tải installer từ trang Releases hoặc build ứng dụng rồi chạy:
 
 ```text
-C:\Users\Admin\Spine\hotkeys.txt
+src-tauri\target\release\bundle\nsis\Spine Hotkey Studio_1.0.0_x64-setup.exe
 ```
 
-Hoặc chạy với một file khác:
+Ứng dụng mặc định đọc:
+
+```text
+%USERPROFILE%\Spine\hotkeys.txt
+```
+
+Preset và backup được lưu trong thư mục dữ liệu ứng dụng của Windows, tách biệt khỏi repository và thư mục Spine.
+
+## Phát triển
+
+Yêu cầu:
+
+- Node.js 20.19 trở lên.
+- Rust stable với toolchain MSVC.
+- Microsoft C++ Build Tools.
+- Microsoft Edge WebView2.
+
+Cài dependency và chạy development:
 
 ```powershell
-python app.py --file "D:\duong-dan\hotkeys.txt"
+npm install
+npm run tauri dev
 ```
 
-Tool chỉ dùng thư viện chuẩn của Python, không cần cài thêm package.
-
-## Cách sử dụng
-
-1. Tìm và chọn lệnh trong bảng.
-2. Bấm **Ghi tổ hợp phím**, sau đó nhấn hotkey mong muốn; hoặc nhập cú pháp Spine trực tiếp vào ô chỉnh sửa rồi nhấn Enter.
-3. Xử lý các cảnh báo trùng phím nếu cần.
-4. Có thể bấm **Lưu thành preset mới** để giữ lại toàn bộ bộ phím hiện tại.
-5. Đóng Spine hoàn toàn, sau đó bấm **Áp dụng vào Spine**.
-
-Mỗi lần áp dụng, file cũ được sao lưu tự động trong thư mục `backups`. Preset cá nhân nằm trong `presets` và được Git bỏ qua mặc định.
-
-## An toàn dữ liệu
-
-- Không sửa `hotkeys.txt` cho đến khi bấm **Áp dụng vào Spine**.
-- Không cho ghi khi tiến trình Spine còn chạy.
-- Nếu file đã bị ứng dụng khác sửa sau lúc tool tải vào, tool sẽ tải lại thay vì ghi đè.
-- Giữ nguyên thứ tự dòng, nhóm trùng, lệnh trùng và kiểu xuống dòng CRLF của file gốc.
-
-## Kiểm thử
+Chạy toàn bộ kiểm thử:
 
 ```powershell
-python -m unittest discover -s tests -v
+npm run check
 ```
+
+Build frontend và installer Windows:
+
+```powershell
+npm run tauri build
+```
+
+## Kiến trúc
+
+- `src/`: frontend TypeScript/CSS thuần, không dùng framework UI.
+- `src-tauri/src/lib.rs`: parser hotkey, preset, backup, kiểm tra tiến trình Spine và Tauri commands.
+- `src-tauri/tauri.conf.json`: cấu hình cửa sổ và NSIS installer.
+
+Frontend chỉ có quyền gọi các command Rust đã đăng ký. Toàn bộ thao tác filesystem được kiểm tra đường dẫn ở backend.

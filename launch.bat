@@ -1,9 +1,0 @@
-@echo off
-cd /d "%~dp0"
-where pythonw.exe >nul 2>nul
-if %errorlevel%==0 (
-    start "" pythonw.exe "%~dp0app.py"
-) else (
-    python "%~dp0app.py"
-)
-
