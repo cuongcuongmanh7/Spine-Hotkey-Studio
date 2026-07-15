@@ -19,7 +19,7 @@ from hotkey_core import (
 
 
 APP_DIR = Path(__file__).resolve().parent
-DEFAULT_HOTKEY_FILE = APP_DIR.parent / "hotkeys.txt"
+DEFAULT_HOTKEY_FILE = Path.home() / "Spine" / "hotkeys.txt"
 PRESET_DIR = APP_DIR / "presets"
 BACKUP_DIR = APP_DIR / "backups"
 

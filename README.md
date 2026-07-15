@@ -2,6 +2,8 @@
 
 Tool desktop nhỏ gọn để chỉnh nhanh `hotkeys.txt` của Spine, phát hiện phím trùng và quản lý nhiều bộ preset riêng.
 
+Repository có thể đặt ở bất kỳ đâu. Tool luôn tìm file Spine mặc định qua `%USERPROFILE%\Spine\hotkeys.txt`, không phụ thuộc vị trí thư mục ứng dụng.
+
 ## Mở tool
 
 Nhấp đúp `SpineHotkeyStudio.exe` (hoặc `launch.bat` nếu cần). Tool mặc định đọc file:
