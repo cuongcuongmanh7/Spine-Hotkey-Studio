@@ -265,20 +265,21 @@ h1 {
 }
 
 .preset-item {
+  position: relative;
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 10px;
-  padding: 9px;
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
-  cursor: pointer;
-  text-align: left;
 }
 
 .preset-item:hover {
   background: rgba(255, 255, 255, 0.035);
+}
+
+.preset-item:focus-within {
+  border-color: rgba(139, 111, 255, 0.38);
 }
 
 .preset-item.selected {
@@ -290,6 +291,80 @@ h1 {
   background: linear-gradient(145deg, #896cff, #704ff5);
   box-shadow: 0 5px 14px rgba(105, 71, 245, 0.24);
   color: white;
+}
+
+.preset-load {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 72px 9px 9px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.preset-load:focus-visible {
+  outline-offset: -2px;
+}
+
+.preset-item-action {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: #202b3e;
+  color: #c3b9ee;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(0.92);
+  transition: opacity 130ms ease, transform 130ms ease, background 130ms ease, border-color 130ms ease;
+}
+
+.preset-rename {
+  right: 39px;
+}
+
+.preset-delete {
+  right: 7px;
+  color: #ffaaa5;
+}
+
+.preset-item:hover .preset-item-action,
+.preset-item:focus-within .preset-item-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+}
+
+.preset-item-action:hover {
+  border-color: rgba(139, 111, 255, 0.35);
+  background: #2a3650;
+}
+
+.preset-delete:hover {
+  border-color: rgba(255, 116, 108, 0.32);
+  background: rgba(112, 40, 48, 0.56);
+}
+
+.preset-item-action svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .preset-mark {
@@ -305,7 +380,7 @@ h1 {
   font-weight: 750;
 }
 
-.preset-item > span:last-child {
+.preset-load > span:last-child {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -335,7 +410,7 @@ h1 {
 
 .preset-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 7px;
   margin-top: 8px;
 }
@@ -344,10 +419,6 @@ h1 {
   min-width: 0;
   padding: 0 8px;
   font-size: 11px;
-}
-
-.preset-actions .button-danger {
-  grid-column: 1 / -1;
 }
 
 .hotkey-workspace {

@@ -31,17 +31,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <span class="eyebrow">PRESET</span>
           <h2>Các bộ phím của bạn</h2>
         </div>
-        <div id="preset-list" class="preset-list" role="listbox" aria-label="Danh sách preset">
+        <div id="preset-list" class="preset-list" role="list" aria-label="Danh sách preset">
           <div class="empty-state compact">Chưa có preset</div>
         </div>
         <p id="preset-meta" class="preset-meta">Chỉnh hotkey rồi lưu bộ đầu tiên.</p>
-        <button id="load-preset-button" class="button button-primary button-wide" type="button">Nạp preset đã chọn</button>
         <button id="save-preset-button" class="button button-secondary button-wide" type="button">Lưu preset <span class="button-shortcut">Ctrl S</span></button>
         <button id="save-as-preset-button" class="button button-ghost button-wide" type="button">Lưu thành preset mới…</button>
         <div class="preset-actions">
-          <button id="rename-preset-button" class="button button-ghost" type="button">Đổi tên</button>
           <button id="duplicate-preset-button" class="button button-ghost" type="button">Sao chép</button>
-          <button id="delete-preset-button" class="button button-danger" type="button">Xóa preset</button>
         </div>
       </aside>
 
@@ -611,11 +608,15 @@ function renderPresets(): void {
     return;
   }
   presets.forEach((preset) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "preset-item";
-    if (preset.fileName === selectedPresetFile) button.classList.add("selected");
-    if (preset.fileName === activePresetFile) button.classList.add("active");
+    const item = document.createElement("div");
+    item.className = "preset-item";
+    item.setAttribute("role", "listitem");
+    if (preset.fileName === selectedPresetFile) item.classList.add("selected");
+    if (preset.fileName === activePresetFile) item.classList.add("active");
+    const loadButton = document.createElement("button");
+    loadButton.type = "button";
+    loadButton.className = "preset-load";
+    loadButton.setAttribute("aria-label", `Nạp preset ${preset.name}`);
     const mark = document.createElement("span");
     mark.className = "preset-mark";
     mark.textContent = preset.name.slice(0, 1).toLocaleUpperCase();
@@ -625,16 +626,40 @@ function renderPresets(): void {
     const count = document.createElement("small");
     count.textContent = `${preset.bindingCount} lệnh${preset.fileName === activePresetFile ? " · Đang dùng" : ""}`;
     copy.append(name, count);
-    button.append(mark, copy);
-    button.addEventListener("click", () => {
-      selectedPresetFile = preset.fileName;
-      renderPresets();
-      const date = new Date(preset.createdAt);
-      presetMeta.textContent = `${preset.bindingCount} lệnh · ${date.toLocaleString("vi-VN")}`;
-    });
-    button.addEventListener("dblclick", () => void loadSelectedPreset());
-    presetList.append(button);
+    loadButton.append(mark, copy);
+    loadButton.addEventListener("click", () => void loadPreset(preset.fileName));
+    const renameButton = document.createElement("button");
+    renameButton.type = "button";
+    renameButton.className = "preset-item-action preset-rename";
+    renameButton.title = `Đổi tên preset ${preset.name}`;
+    renameButton.setAttribute("aria-label", `Đổi tên preset ${preset.name}`);
+    renameButton.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 20h4l10.6-10.6a1.4 1.4 0 0 0 0-2L16.6 5.4a1.4 1.4 0 0 0-2 0L4 16v4Zm9.5-12.5 3 3" />
+      </svg>
+    `;
+    renameButton.addEventListener("click", () => void renamePreset(preset));
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "preset-item-action preset-delete";
+    deleteButton.title = `Xóa preset ${preset.name}`;
+    deleteButton.setAttribute("aria-label", `Xóa preset ${preset.name}`);
+    deleteButton.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5" />
+      </svg>
+    `;
+    deleteButton.addEventListener("click", () => void deletePreset(preset));
+    item.append(loadButton, renameButton, deleteButton);
+    presetList.append(item);
   });
+  const selected = presets.find((preset) => preset.fileName === selectedPresetFile);
+  if (selected) {
+    const date = new Date(selected.createdAt);
+    presetMeta.textContent = `${selected.bindingCount} lệnh · ${date.toLocaleString("vi-VN")}`;
+  } else {
+    presetMeta.textContent = "Chọn một preset để nạp.";
+  }
 }
 
 async function refreshPresets(preferred?: string): Promise<void> {
@@ -739,13 +764,25 @@ async function createPreset(): Promise<void> {
   }
 }
 
-async function loadSelectedPreset(): Promise<void> {
-  if (!snapshot || !selectedPresetFile) {
-    toast("Hãy chọn một preset", "warning");
+async function loadPreset(fileName: string): Promise<void> {
+  if (!snapshot) return;
+  const preset = presets.find((candidate) => candidate.fileName === fileName);
+  if (!preset) return;
+  if (fileName === activePresetFile) {
+    selectedPresetFile = fileName;
+    renderPresets();
     return;
   }
+  if (hasUnsavedWork()) {
+    const confirmed = await openDialog({
+      title: "Chuyển sang preset khác?",
+      message: "Các thay đổi chưa lưu vào preset hoặc Spine sẽ bị bỏ.",
+      confirmText: "Chuyển preset",
+    });
+    if (!confirmed) return;
+  }
   try {
-    const payload = await invoke<PresetPayload>("load_preset", { fileName: selectedPresetFile });
+    const payload = await invoke<PresetPayload>("load_preset", { fileName });
     if (payload.structureFingerprint !== snapshot.structureFingerprint) {
       const confirmed = await openDialog({
         title: "Preset khác phiên bản",
@@ -761,7 +798,8 @@ async function loadSelectedPreset(): Promise<void> {
         matched += 1;
       }
     });
-    activePresetFile = selectedPresetFile;
+    selectedPresetFile = fileName;
+    activePresetFile = fileName;
     captureWorkingBaseline();
     renderPresets();
     refreshTable();
@@ -773,9 +811,7 @@ async function loadSelectedPreset(): Promise<void> {
   }
 }
 
-async function renamePreset(): Promise<void> {
-  const preset = currentPreset();
-  if (!preset) return toast("Hãy chọn một preset", "warning");
+async function renamePreset(preset: PresetSummary): Promise<void> {
   const newName = await openDialog({
     title: "Đổi tên preset",
     message: "Nhập tên mới cho bộ hotkey.",
@@ -784,11 +820,12 @@ async function renamePreset(): Promise<void> {
   });
   if (typeof newName !== "string" || newName === preset.name) return;
   try {
+    const wasActive = activePresetFile === preset.fileName;
     const summary = await invoke<PresetSummary>("rename_preset", {
       request: { fileName: preset.fileName, newName },
     });
-    if (activePresetFile === preset.fileName) activePresetFile = summary.fileName;
-    await refreshPresets(summary.fileName);
+    if (wasActive) activePresetFile = summary.fileName;
+    await refreshPresets(wasActive ? summary.fileName : (activePresetFile ?? undefined));
     toast(`Đã đổi tên thành “${summary.name}”`);
   } catch (error) {
     toast(errorMessage(error), "error");
@@ -809,16 +846,14 @@ async function duplicatePreset(): Promise<void> {
     const summary = await invoke<PresetSummary>("duplicate_preset", {
       request: { fileName: preset.fileName, newName },
     });
-    await refreshPresets(summary.fileName);
+    await refreshPresets(activePresetFile ?? undefined);
     toast(`Đã tạo “${summary.name}”`);
   } catch (error) {
     toast(errorMessage(error), "error");
   }
 }
 
-async function deletePreset(): Promise<void> {
-  const preset = currentPreset();
-  if (!preset) return toast("Hãy chọn một preset", "warning");
+async function deletePreset(preset: PresetSummary): Promise<void> {
   const confirmed = await openDialog({
     title: "Xóa preset?",
     message: `Preset “${preset.name}” sẽ bị xóa. hotkeys.txt không bị ảnh hưởng.`,
@@ -829,8 +864,8 @@ async function deletePreset(): Promise<void> {
   try {
     await invoke("delete_preset", { fileName: preset.fileName });
     if (activePresetFile === preset.fileName) activePresetFile = null;
-    selectedPresetFile = null;
-    await refreshPresets();
+    if (selectedPresetFile === preset.fileName) selectedPresetFile = null;
+    await refreshPresets(activePresetFile ?? selectedPresetFile ?? undefined);
     toast(`Đã xóa preset “${preset.name}”`);
   } catch (error) {
     toast(errorMessage(error), "error");
@@ -861,12 +896,9 @@ restoreButton.addEventListener("click", () => {
   refreshEditor();
   refreshTable();
 });
-$("#load-preset-button").addEventListener("click", () => void loadSelectedPreset());
 savePresetButton.addEventListener("click", () => void saveActivePreset());
 $("#save-as-preset-button").addEventListener("click", () => void createPreset());
-$("#rename-preset-button").addEventListener("click", () => void renamePreset());
 $("#duplicate-preset-button").addEventListener("click", () => void duplicatePreset());
-$("#delete-preset-button").addEventListener("click", () => void deletePreset());
 
 document.addEventListener(
   "keydown",
