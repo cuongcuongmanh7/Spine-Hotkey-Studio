@@ -435,6 +435,8 @@ input::placeholder {
 }
 
 .toggle-label {
+  min-width: 138px;
+  flex: 0 0 auto;
   gap: 8px;
   color: var(--muted);
   cursor: pointer;
@@ -453,6 +455,7 @@ input::placeholder {
   position: relative;
   width: 34px;
   height: 20px;
+  flex: 0 0 34px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: #111a27;
