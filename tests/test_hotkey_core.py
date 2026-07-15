@@ -2,7 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
+from app import event_to_spine_hotkey
 from hotkey_core import (
     HotkeyDocument,
     apply_preset,
@@ -27,6 +29,14 @@ SAMPLE = (
 
 
 class HotkeyDocumentTests(unittest.TestCase):
+    def test_num_lock_state_is_not_treated_as_alt_on_windows(self):
+        event = SimpleNamespace(keysym="q", state=0x8)
+        self.assertEqual(event_to_spine_hotkey(event), "Q")
+
+    def test_windows_alt_state_is_detected(self):
+        event = SimpleNamespace(keysym="q", state=0x20000)
+        self.assertEqual(event_to_spine_hotkey(event), "alt + Q")
+
     def test_round_trip_preserves_crlf_and_duplicate_identifiers(self):
         document = HotkeyDocument.from_text(SAMPLE)
         self.assertEqual(document.render(), SAMPLE)
@@ -85,4 +95,3 @@ class HotkeyDocumentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

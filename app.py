@@ -38,6 +38,169 @@ AMBER = "#F6C453"
 ROW_ALT = "#121B2A"
 
 
+def _rounded_points(x1: float, y1: float, x2: float, y2: float, radius: float) -> list[float]:
+    radius = max(0, min(radius, (x2 - x1) / 2, (y2 - y1) / 2))
+    return [
+        x1 + radius, y1,
+        x2 - radius, y1,
+        x2, y1,
+        x2, y1 + radius,
+        x2, y2 - radius,
+        x2, y2,
+        x2 - radius, y2,
+        x1 + radius, y2,
+        x1, y2,
+        x1, y2 - radius,
+        x1, y1 + radius,
+        x1, y1,
+    ]
+
+
+class RoundedPanel(tk.Canvas):
+    def __init__(
+        self,
+        parent,
+        *,
+        outer_bg: str,
+        fill: str,
+        radius: int = 16,
+        inset: int = 8,
+        border: str = BORDER,
+        width: int = 1,
+        height: int = 1,
+    ) -> None:
+        super().__init__(
+            parent,
+            bg=outer_bg,
+            highlightthickness=0,
+            borderwidth=0,
+            width=width,
+            height=height,
+        )
+        self.fill = fill
+        self.radius = radius
+        self.inset = inset
+        self.border = border
+        self.content = tk.Frame(self, bg=fill, borderwidth=0, highlightthickness=0)
+        self._window = self.create_window(inset, inset, window=self.content, anchor="nw")
+        self.bind("<Configure>", self._redraw)
+
+    def _redraw(self, event=None) -> None:
+        width = max(2, event.width if event else self.winfo_width())
+        height = max(2, event.height if event else self.winfo_height())
+        self.delete("rounded-bg")
+        self.create_polygon(
+            _rounded_points(1, 1, width - 1, height - 1, self.radius),
+            smooth=True,
+            splinesteps=24,
+            fill=self.border,
+            outline="",
+            tags="rounded-bg",
+        )
+        self.create_polygon(
+            _rounded_points(2, 2, width - 2, height - 2, max(0, self.radius - 1)),
+            smooth=True,
+            splinesteps=24,
+            fill=self.fill,
+            outline="",
+            tags="rounded-bg",
+        )
+        self.tag_lower("rounded-bg")
+        available_width = max(1, width - self.inset * 2)
+        available_height = max(1, height - self.inset * 2)
+        self.coords(self._window, self.inset, self.inset)
+        self.itemconfigure(self._window, width=available_width, height=available_height)
+
+
+class RoundedButton(tk.Canvas):
+    def __init__(
+        self,
+        parent,
+        text: str,
+        command,
+        *,
+        width: int,
+        height: int = 38,
+        radius: int = 11,
+        outer_bg: str,
+        fill: str = PANEL_2,
+        hover: str = "#202B3E",
+        foreground: str = TEXT,
+        border: str | None = BORDER,
+        font=("Segoe UI Semibold", 9),
+    ) -> None:
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            bg=outer_bg,
+            highlightthickness=0,
+            borderwidth=0,
+            cursor="hand2",
+        )
+        self.button_text = text
+        self.command = command
+        self.radius = radius
+        self.fill = fill
+        self.hover = hover
+        self.foreground = foreground
+        self.border = border
+        self.font_spec = font
+        self.enabled = True
+        self.bind("<Configure>", lambda _event: self._draw(self.fill))
+        self.bind("<Enter>", lambda _event: self._draw(self.hover) if self.enabled else None)
+        self.bind("<Leave>", lambda _event: self._draw(self.fill) if self.enabled else None)
+        self.bind("<Button-1>", self._on_click)
+        self._draw(self.fill)
+
+    def _draw(self, color: str) -> None:
+        width = max(2, self.winfo_width())
+        height = max(2, self.winfo_height())
+        self.delete("all")
+        if self.border:
+            self.create_polygon(
+                _rounded_points(0, 0, width, height, self.radius),
+                smooth=True,
+                splinesteps=24,
+                fill=self.border,
+                outline="",
+            )
+            inset = 1
+        else:
+            inset = 0
+        self.create_polygon(
+            _rounded_points(inset, inset, width - inset, height - inset, max(0, self.radius - inset)),
+            smooth=True,
+            splinesteps=24,
+            fill=color if self.enabled else BORDER,
+            outline="",
+        )
+        self.create_text(
+            width / 2,
+            height / 2,
+            text=self.button_text,
+            fill=self.foreground if self.enabled else MUTED,
+            font=self.font_spec,
+        )
+
+    def _on_click(self, _event=None) -> None:
+        if self.enabled and self.command:
+            self.command()
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+        if "text" in kwargs:
+            self.button_text = kwargs.pop("text")
+        if "state" in kwargs:
+            self.enabled = kwargs.pop("state") != "disabled"
+        if kwargs:
+            super().configure(**kwargs)
+        self._draw(self.fill)
+
+    config = configure
+
+
 class HotkeyStudio:
     def __init__(self, root: tk.Tk, hotkey_path: Path) -> None:
         self.root = root
@@ -200,8 +363,29 @@ class HotkeyStudio:
             font=("Segoe UI", 8),
         ).pack(anchor="w", pady=(2, 0))
 
-        ttk.Button(header, text="Áp dụng vào Spine", style="Primary.TButton", command=self.apply_to_spine).pack(side="right")
-        ttk.Button(header, text="Tải lại", style="Secondary.TButton", command=self.reload_document).pack(side="right", padx=(0, 9))
+        RoundedButton(
+            header,
+            "Áp dụng vào Spine",
+            self.apply_to_spine,
+            width=164,
+            height=42,
+            radius=13,
+            outer_bg=BG,
+            fill=ACCENT,
+            hover=ACCENT_HOVER,
+            border=None,
+            foreground="#FFFFFF",
+            font=("Segoe UI Semibold", 10),
+        ).pack(side="right")
+        RoundedButton(
+            header,
+            "Tải lại",
+            self.reload_document,
+            width=88,
+            height=42,
+            radius=13,
+            outer_bg=BG,
+        ).pack(side="right", padx=(0, 9))
 
         body = ttk.Frame(outer, style="App.TFrame")
         body.pack(fill="both", expand=True)
@@ -219,9 +403,10 @@ class HotkeyStudio:
         tk.Label(footer, textvariable=self.count_var, bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(side="right")
 
     def _build_sidebar(self, parent: ttk.Frame) -> None:
-        sidebar = ttk.Frame(parent, style="Panel.TFrame", width=244, padding=(16, 17))
-        sidebar.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        sidebar.grid_propagate(False)
+        sidebar_panel = RoundedPanel(parent, outer_bg=BG, fill=PANEL, radius=20, inset=16, width=244)
+        sidebar_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        sidebar_panel.grid_propagate(False)
+        sidebar = sidebar_panel.content
         sidebar.grid_rowconfigure(2, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
 
@@ -234,8 +419,9 @@ class HotkeyStudio:
             font=("Segoe UI Semibold", 12),
         ).grid(row=1, column=0, sticky="w", pady=(4, 13))
 
-        list_frame = tk.Frame(sidebar, bg=INPUT, highlightthickness=1, highlightbackground=BORDER)
-        list_frame.grid(row=2, column=0, sticky="nsew")
+        list_panel = RoundedPanel(sidebar, outer_bg=PANEL, fill=INPUT, radius=13, inset=6, border=BORDER)
+        list_panel.grid(row=2, column=0, sticky="nsew")
+        list_frame = list_panel.content
         self.preset_list = tk.Listbox(
             list_frame,
             bg=INPUT,
@@ -260,26 +446,60 @@ class HotkeyStudio:
             font=("Segoe UI", 8),
         ).grid(row=3, column=0, sticky="ew", pady=(10, 8))
 
-        ttk.Button(sidebar, text="Nạp preset đã chọn", style="Primary.TButton", command=self.load_selected_preset).grid(
-            row=4, column=0, sticky="ew", pady=(0, 8)
-        )
-        ttk.Button(sidebar, text="Lưu thành preset mới", style="Secondary.TButton", command=self.create_preset).grid(
-            row=5, column=0, sticky="ew", pady=(0, 8)
-        )
+        RoundedButton(
+            sidebar,
+            "Nạp preset đã chọn",
+            self.load_selected_preset,
+            width=210,
+            outer_bg=PANEL,
+            fill=ACCENT,
+            hover=ACCENT_HOVER,
+            border=None,
+            foreground="#FFFFFF",
+        ).grid(row=4, column=0, sticky="ew", pady=(0, 8))
+        RoundedButton(
+            sidebar,
+            "Lưu thành preset mới",
+            self.create_preset,
+            width=210,
+            outer_bg=PANEL,
+        ).grid(row=5, column=0, sticky="ew", pady=(0, 8))
 
         preset_actions = ttk.Frame(sidebar, style="Panel.TFrame")
         preset_actions.grid(row=6, column=0, sticky="ew")
         for column in range(2):
             preset_actions.grid_columnconfigure(column, weight=1)
-        ttk.Button(preset_actions, text="Đổi tên", style="Secondary.TButton", command=self.rename_preset).grid(
-            row=0, column=0, sticky="ew", padx=(0, 4), pady=(0, 6)
-        )
-        ttk.Button(preset_actions, text="Sao chép", style="Secondary.TButton", command=self.duplicate_preset).grid(
-            row=0, column=1, sticky="ew", padx=(4, 0), pady=(0, 6)
-        )
-        ttk.Button(preset_actions, text="Xóa", style="Danger.TButton", command=self.delete_preset).grid(
-            row=1, column=0, columnspan=2, sticky="ew"
-        )
+        RoundedButton(
+            preset_actions,
+            "Đổi tên",
+            self.rename_preset,
+            width=101,
+            height=35,
+            radius=10,
+            outer_bg=PANEL,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=(0, 6))
+        RoundedButton(
+            preset_actions,
+            "Sao chép",
+            self.duplicate_preset,
+            width=101,
+            height=35,
+            radius=10,
+            outer_bg=PANEL,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0), pady=(0, 6))
+        RoundedButton(
+            preset_actions,
+            "Xóa preset",
+            self.delete_preset,
+            width=210,
+            height=35,
+            radius=10,
+            outer_bg=PANEL,
+            fill="#3A1D24",
+            hover="#52242C",
+            foreground="#FFB4AE",
+            border=None,
+        ).grid(row=1, column=0, columnspan=2, sticky="ew")
 
     def _build_workspace(self, parent: ttk.Frame) -> None:
         workspace = ttk.Frame(parent, style="App.TFrame")
@@ -303,8 +523,9 @@ class HotkeyStudio:
             command=self.refresh_table,
         ).grid(row=0, column=2)
 
-        table_frame = ttk.Frame(workspace, style="Panel.TFrame")
-        table_frame.grid(row=1, column=0, sticky="nsew")
+        table_panel = RoundedPanel(workspace, outer_bg=BG, fill=PANEL, radius=18, inset=7, border=BORDER)
+        table_panel.grid(row=1, column=0, sticky="nsew")
+        table_frame = table_panel.content
         table_frame.grid_columnconfigure(0, weight=1)
         table_frame.grid_rowconfigure(0, weight=1)
         self.tree = ttk.Treeview(table_frame, columns=("group", "action", "hotkey", "state"), show="headings", selectmode="browse")
@@ -325,8 +546,17 @@ class HotkeyStudio:
         self.tree.tag_configure("conflict", foreground="#FFAAA3")
         self.tree.tag_configure("changed", foreground="#BBAEFF")
 
-        editor = ttk.Frame(workspace, style="Panel2.TFrame", padding=(17, 14))
-        editor.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        editor_panel = RoundedPanel(
+            workspace,
+            outer_bg=BG,
+            fill=PANEL_2,
+            radius=18,
+            inset=16,
+            border=BORDER,
+            height=145,
+        )
+        editor_panel.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        editor = editor_panel.content
         editor.grid_columnconfigure(0, weight=1)
         top = ttk.Frame(editor, style="Panel2.TFrame")
         top.grid(row=0, column=0, columnspan=5, sticky="ew", pady=(0, 10))
@@ -340,10 +570,32 @@ class HotkeyStudio:
 
         self.hotkey_entry = ttk.Entry(editor, textvariable=self.hotkey_var, font=("Consolas", 11))
         self.hotkey_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8))
-        self.record_button = ttk.Button(editor, text="Ghi tổ hợp phím", style="Primary.TButton", command=self.toggle_recording)
+        self.record_button = RoundedButton(
+            editor,
+            "Ghi tổ hợp phím",
+            self.toggle_recording,
+            width=142,
+            outer_bg=PANEL_2,
+            fill=ACCENT,
+            hover=ACCENT_HOVER,
+            border=None,
+            foreground="#FFFFFF",
+        )
         self.record_button.grid(row=1, column=1, padx=(0, 7))
-        ttk.Button(editor, text="Xóa gán", style="Secondary.TButton", command=self.clear_binding).grid(row=1, column=2, padx=(0, 7))
-        ttk.Button(editor, text="Khôi phục", style="Secondary.TButton", command=self.restore_binding).grid(row=1, column=3)
+        RoundedButton(
+            editor,
+            "Xóa gán",
+            self.clear_binding,
+            width=88,
+            outer_bg=PANEL_2,
+        ).grid(row=1, column=2, padx=(0, 7))
+        RoundedButton(
+            editor,
+            "Khôi phục",
+            self.restore_binding,
+            width=96,
+            outer_bg=PANEL_2,
+        ).grid(row=1, column=3)
         self.conflict_label = tk.Label(
             editor,
             textvariable=self.conflict_var,
@@ -805,7 +1057,10 @@ def event_to_spine_hotkey(event) -> str:
         modifiers.append("ctrl")
     if state & 0x1:
         modifiers.append("shift")
-    if state & 0x20000 or state & 0x8:
+    # Trên Windows, Tk dùng 0x20000 cho Alt. Bit 0x8 có thể là Num Lock,
+    # vì vậy không được coi 0x8 là Alt trên nền tảng này.
+    alt_pressed = bool(state & 0x20000) if sys.platform == "win32" else bool(state & 0x8)
+    if alt_pressed:
         modifiers.append("alt")
     return " + ".join([*modifiers, base])
 
