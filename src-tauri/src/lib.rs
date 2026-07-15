@@ -513,13 +513,25 @@ fn is_spine_running() -> bool {
                 .next()
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            process == "spine.exe" || (process.starts_with("spine-") && process.ends_with(".exe"))
+            is_spine_process_name(&process)
         })
     }
     #[cfg(not(windows))]
     {
         false
     }
+}
+
+fn is_spine_process_name(process: &str) -> bool {
+    let normalized = process.trim().to_ascii_lowercase();
+    if normalized == "spine.exe" {
+        return true;
+    }
+    normalized
+        .strip_prefix("spine-")
+        .and_then(|name| name.strip_suffix(".exe"))
+        .and_then(|version| version.chars().next())
+        .is_some_and(|character| character.is_ascii_digit())
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -639,6 +651,14 @@ mod tests {
     #[test]
     fn hotkey_spacing_is_normalized() {
         assert_eq!(clean_hotkey(" ctrl+ shift +Q "), "ctrl + shift + Q");
+    }
+
+    #[test]
+    fn spine_process_detection_ignores_hotkey_studio() {
+        assert!(is_spine_process_name("Spine.exe"));
+        assert!(is_spine_process_name("Spine-4.2.17.exe"));
+        assert!(!is_spine_process_name("spine-hotkey-studio.exe"));
+        assert!(!is_spine_process_name("spine-launcher.exe"));
     }
 
     #[test]

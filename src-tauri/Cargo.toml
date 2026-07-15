@@ -1,6 +1,6 @@
 [package]
 name = "spine-hotkey-studio"
-version = "1.0.0"
+version = "1.0.1"
 description = "Modern hotkey and preset manager for Spine"
 authors = ["Cuong Manh"]
 edition = "2021"
