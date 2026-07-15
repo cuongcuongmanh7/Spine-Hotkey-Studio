@@ -97,6 +97,20 @@ export function findConflicts(entries: HotkeyEntry[]): Map<string, string[]> {
   return new Map([...grouped].filter(([, ids]) => ids.length > 1));
 }
 
+export function overrideConflict(entries: HotkeyEntry[], preferredEntryId: string): string[] {
+  const preferred = entries.find((entry) => entry.entryId === preferredEntryId);
+  if (!preferred) return [];
+  const normalized = normalizeHotkey(preferred.value);
+  if (!normalized) return [];
+  const clearedIds: string[] = [];
+  entries.forEach((entry) => {
+    if (entry.entryId === preferredEntryId || normalizeHotkey(entry.value) !== normalized) return;
+    entry.value = "";
+    clearedIds.push(entry.entryId);
+  });
+  return clearedIds;
+}
+
 export function bindingRecord(entries: HotkeyEntry[]): Record<string, string> {
   return Object.fromEntries(entries.map((entry) => [entry.entryId, entry.value]));
 }

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import "./styles.css";
-import { bindingRecord, cleanHotkey, eventToSpineHotkey, findConflicts } from "./hotkeys";
+import { bindingRecord, cleanHotkey, eventToSpineHotkey, findConflicts, overrideConflict } from "./hotkeys";
 import type {
   HotkeyEntry,
   HotkeySnapshot,
@@ -36,7 +36,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         </div>
         <p id="preset-meta" class="preset-meta">Chỉnh hotkey rồi lưu bộ đầu tiên.</p>
         <button id="load-preset-button" class="button button-primary button-wide" type="button">Nạp preset đã chọn</button>
-        <button id="create-preset-button" class="button button-secondary button-wide" type="button">Lưu thành preset mới</button>
+        <button id="save-preset-button" class="button button-secondary button-wide" type="button">Lưu preset <span class="button-shortcut">Ctrl S</span></button>
+        <button id="save-as-preset-button" class="button button-ghost button-wide" type="button">Lưu thành preset mới…</button>
         <div class="preset-actions">
           <button id="rename-preset-button" class="button button-ghost" type="button">Đổi tên</button>
           <button id="duplicate-preset-button" class="button button-ghost" type="button">Sao chép</button>
@@ -86,7 +87,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <button id="clear-button" class="button button-secondary" type="button" disabled>Xóa gán</button>
             <button id="restore-button" class="button button-secondary" type="button" disabled>Khôi phục</button>
           </div>
-          <p id="conflict-message" class="helper-text">Chưa có lệnh được chọn.</p>
+          <div id="conflict-message" class="helper-text">Chưa có lệnh được chọn.</div>
         </section>
       </section>
     </section>
@@ -121,6 +122,7 @@ const $ = <T extends HTMLElement>(selector: string): T => {
 const targetPath = $("#target-path");
 const reloadButton = $("#reload-button") as HTMLButtonElement;
 const applyButton = $("#apply-button") as HTMLButtonElement;
+const savePresetButton = $("#save-preset-button") as HTMLButtonElement;
 const presetList = $("#preset-list");
 const presetMeta = $("#preset-meta");
 const searchInput = $("#search-input") as HTMLInputElement;
@@ -143,10 +145,24 @@ let snapshot: HotkeySnapshot | null = null;
 let selectedIndex: number | null = null;
 let presets: PresetSummary[] = [];
 let selectedPresetFile: string | null = null;
+let activePresetFile: string | null = null;
+let savedWorkingValues = new Map<string, string>();
 let recording = false;
 
-function isDirty(): boolean {
+function hasUnappliedChanges(): boolean {
   return snapshot?.entries.some((entry) => entry.value !== entry.originalValue) ?? false;
+}
+
+function hasUnsavedPresetChanges(): boolean {
+  return snapshot?.entries.some((entry) => savedWorkingValues.get(entry.entryId) !== entry.value) ?? false;
+}
+
+function hasUnsavedWork(): boolean {
+  return hasUnappliedChanges() && (!activePresetFile || hasUnsavedPresetChanges());
+}
+
+function captureWorkingBaseline(): void {
+  savedWorkingValues = new Map(snapshot?.entries.map((entry) => [entry.entryId, entry.value]) ?? []);
 }
 
 function selectedEntry(): HotkeyEntry | null {
@@ -251,6 +267,40 @@ function refreshGroups(): void {
   groupSelect.value = groups.includes(current) ? current : "Tất cả nhóm";
 }
 
+function conflictIdsFor(entryId: string): string[] {
+  if (!snapshot) return [];
+  return [...findConflicts(snapshot.entries).values()].find((ids) => ids.includes(entryId)) ?? [];
+}
+
+function navigateToNextConflict(entryId: string): void {
+  if (!snapshot) return;
+  const related = conflictIdsFor(entryId);
+  if (related.length < 2) return;
+  const currentPosition = related.indexOf(entryId);
+  const targetId = related[(currentPosition + 1) % related.length];
+  const targetIndex = snapshot.entries.findIndex((entry) => entry.entryId === targetId);
+  if (targetIndex < 0) return;
+
+  const target = snapshot.entries[targetIndex];
+  const query = searchInput.value.trim().toLocaleLowerCase();
+  const haystack = `${target.groupLabel} ${target.action} ${target.value}`.toLocaleLowerCase();
+  if (query && !haystack.includes(query)) searchInput.value = "";
+  if (groupSelect.value !== "Tất cả nhóm" && groupSelect.value !== target.groupLabel) {
+    groupSelect.value = "Tất cả nhóm";
+  }
+
+  selectedIndex = targetIndex;
+  stopRecording();
+  refreshEditor();
+  refreshTable();
+  window.requestAnimationFrame(() => {
+    hotkeyList.querySelector<HTMLElement>(`[data-index="${targetIndex}"]`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  });
+}
+
 function refreshTable(): void {
   if (!snapshot) return;
   const query = searchInput.value.trim().toLocaleLowerCase();
@@ -268,11 +318,11 @@ function refreshTable(): void {
     const haystack = `${entry.groupLabel} ${entry.action} ${entry.value}`.toLocaleLowerCase();
     if (query && !haystack.includes(query)) return;
 
-    const row = document.createElement("button");
-    row.type = "button";
+    const row = document.createElement("div");
     row.className = "hotkey-row hotkey-grid";
     row.dataset.index = String(index);
     row.setAttribute("role", "option");
+    row.tabIndex = 0;
     row.setAttribute("aria-selected", String(index === selectedIndex));
     if (index === selectedIndex) row.classList.add("selected");
     if (conflictIds.has(entry.entryId)) row.classList.add("conflict");
@@ -292,14 +342,39 @@ function refreshTable(): void {
     keyCell.append(keycap);
     const stateCell = document.createElement("span");
     stateCell.className = "state-cell";
-    stateCell.textContent = conflictIds.has(entry.entryId)
+    const stateText = conflictIds.has(entry.entryId)
       ? "Trùng phím"
       : entry.value !== entry.originalValue
         ? "Đã sửa"
         : "";
+    if (stateText) {
+      if (conflictIds.has(entry.entryId)) {
+        const stateChip = document.createElement("button");
+        stateChip.type = "button";
+        stateChip.className = "state-chip conflict";
+        stateChip.textContent = "Trùng phím →";
+        stateChip.title = "Đi tới lệnh tiếp theo dùng cùng tổ hợp phím";
+        stateChip.addEventListener("click", (event) => {
+          event.stopPropagation();
+          navigateToNextConflict(entry.entryId);
+        });
+        stateChip.addEventListener("dblclick", (event) => event.stopPropagation());
+        stateCell.append(stateChip);
+      } else {
+        const stateChip = document.createElement("span");
+        stateChip.className = "state-chip changed";
+        stateChip.textContent = stateText;
+        stateCell.append(stateChip);
+      }
+    }
     row.append(groupCell, actionCell, keyCell, stateCell);
     row.addEventListener("click", () => selectEntry(index));
     row.addEventListener("dblclick", () => startRecording());
+    row.addEventListener("keydown", (event) => {
+      if (event.target !== row || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      selectEntry(index);
+    });
     fragment.append(row);
     shown += 1;
   });
@@ -360,18 +435,63 @@ function updateConflictMessage(entry: HotkeyEntry): void {
       .filter(Boolean)
       .slice(0, 3);
     conflictMessage.className = "helper-text warning";
-    conflictMessage.textContent = `Cảnh báo: trùng với ${names.join(", ")}`;
+    const copy = document.createElement("span");
+    copy.textContent = `Cảnh báo: trùng với ${names.join(", ")}`;
+    const actions = document.createElement("span");
+    actions.className = "helper-actions";
+    const navigateButton = document.createElement("button");
+    navigateButton.type = "button";
+    navigateButton.className = "helper-action";
+    navigateButton.textContent = "Đi tới";
+    navigateButton.addEventListener("click", () => navigateToNextConflict(entry.entryId));
+    const overrideButton = document.createElement("button");
+    overrideButton.type = "button";
+    overrideButton.className = "helper-action danger";
+    overrideButton.textContent = "Ghi đè";
+    overrideButton.addEventListener("click", () => void overrideSelectedConflict());
+    actions.append(navigateButton, overrideButton);
+    conflictMessage.replaceChildren(copy, actions);
   } else {
     conflictMessage.className = "helper-text success";
     conflictMessage.textContent = "Không phát hiện xung đột phím.";
   }
 }
 
+async function overrideSelectedConflict(): Promise<void> {
+  if (!snapshot) return;
+  commitManualValue();
+  const entry = selectedEntry();
+  if (!entry?.value) return;
+  const otherIds = conflictIdsFor(entry.entryId).filter((id) => id !== entry.entryId);
+  if (!otherIds.length) return;
+  const affected = otherIds
+    .map((id) => snapshot?.entries.find((candidate) => candidate.entryId === id)?.action)
+    .filter((name): name is string => Boolean(name));
+  const confirmed = await openDialog({
+    title: "Ghi đè tổ hợp phím?",
+    message: `Giữ “${entry.value}” cho “${entry.action}” và xóa khỏi ${affected.length} lệnh: ${affected.join(", ")}.`,
+    confirmText: "Ghi đè",
+    danger: true,
+  });
+  if (!confirmed) return;
+  overrideConflict(snapshot.entries, entry.entryId);
+  refreshEditor();
+  refreshTable();
+  setStatus(`Đã ưu tiên “${entry.action}”; ${affected.length} lệnh trùng đã được xóa phím`, "warning");
+  toast(`Đã xóa tổ hợp khỏi ${affected.length} lệnh bị trùng`);
+}
+
 function updateDirtyState(): void {
   if (!snapshot) return;
   const changed = snapshot.entries.filter((entry) => entry.value !== entry.originalValue).length;
+  const unsavedPreset = activePresetFile ? hasUnsavedPresetChanges() : changed > 0;
   applyButton.classList.toggle("has-changes", changed > 0);
-  if (changed > 0) setStatus(`${changed} thay đổi chưa áp dụng`, "warning");
+  savePresetButton.classList.toggle("has-changes", unsavedPreset);
+  if (changed > 0) {
+    setStatus(`${changed} thay đổi chưa áp dụng${unsavedPreset ? " · preset chưa lưu" : ""}`, "warning");
+  } else if (unsavedPreset) {
+    setStatus("Preset có thay đổi chưa lưu", "warning");
+  }
 }
 
 function commitManualValue(): void {
@@ -400,10 +520,10 @@ function stopRecording(): void {
 }
 
 async function loadDocument(force = false): Promise<void> {
-  if (!force && isDirty()) {
+  if (!force && hasUnsavedWork()) {
     const confirmed = await openDialog({
       title: "Tải lại hotkeys.txt?",
-      message: "Các thay đổi chưa áp dụng sẽ bị bỏ.",
+      message: "Các thay đổi chưa lưu vào preset hoặc Spine sẽ bị bỏ.",
       confirmText: "Tải lại",
     });
     if (!confirmed) return;
@@ -413,10 +533,13 @@ async function loadDocument(force = false): Promise<void> {
   try {
     snapshot = await invoke<HotkeySnapshot>("load_hotkeys");
     selectedIndex = null;
+    activePresetFile = null;
     targetPath.textContent = snapshot.path;
     searchInput.value = "";
     groupSelect.value = "Tất cả nhóm";
     refreshGroups();
+    captureWorkingBaseline();
+    renderPresets();
     refreshTable();
     refreshEditor();
     setStatus(`Đã đọc ${snapshot.entries.length} lệnh`);
@@ -432,7 +555,7 @@ async function loadDocument(force = false): Promise<void> {
 async function applyChanges(): Promise<void> {
   if (!snapshot) return;
   commitManualValue();
-  if (!isDirty()) {
+  if (!hasUnappliedChanges()) {
     toast("Không có thay đổi để áp dụng", "warning");
     return;
   }
@@ -484,6 +607,7 @@ function renderPresets(): void {
     presetList.append(empty);
     presetMeta.textContent = "Chỉnh hotkey rồi lưu bộ đầu tiên.";
     selectedPresetFile = null;
+    activePresetFile = null;
     return;
   }
   presets.forEach((preset) => {
@@ -491,6 +615,7 @@ function renderPresets(): void {
     button.type = "button";
     button.className = "preset-item";
     if (preset.fileName === selectedPresetFile) button.classList.add("selected");
+    if (preset.fileName === activePresetFile) button.classList.add("active");
     const mark = document.createElement("span");
     mark.className = "preset-mark";
     mark.textContent = preset.name.slice(0, 1).toLocaleUpperCase();
@@ -498,7 +623,7 @@ function renderPresets(): void {
     const name = document.createElement("strong");
     name.textContent = preset.name;
     const count = document.createElement("small");
-    count.textContent = `${preset.bindingCount} lệnh`;
+    count.textContent = `${preset.bindingCount} lệnh${preset.fileName === activePresetFile ? " · Đang dùng" : ""}`;
     copy.append(name, count);
     button.append(mark, copy);
     button.addEventListener("click", () => {
@@ -517,6 +642,7 @@ async function refreshPresets(preferred?: string): Promise<void> {
     presets = await invoke<PresetSummary[]>("list_presets");
     if (preferred && presets.some((preset) => preset.fileName === preferred)) selectedPresetFile = preferred;
     else if (selectedPresetFile && !presets.some((preset) => preset.fileName === selectedPresetFile)) selectedPresetFile = null;
+    if (activePresetFile && !presets.some((preset) => preset.fileName === activePresetFile)) activePresetFile = null;
     renderPresets();
   } catch (error) {
     toast(errorMessage(error), "error");
@@ -527,8 +653,56 @@ function currentPreset(): PresetSummary | null {
   return presets.find((preset) => preset.fileName === selectedPresetFile) ?? null;
 }
 
+function activePreset(): PresetSummary | null {
+  return presets.find((preset) => preset.fileName === activePresetFile) ?? null;
+}
+
+function presetRequest(name: string, overwrite: boolean): {
+  name: string;
+  sourceFile: string;
+  structureFingerprint: string;
+  bindings: Record<string, string>;
+  overwrite: boolean;
+} | null {
+  if (!snapshot) return null;
+  return {
+    name,
+    sourceFile: snapshot.path.split(/[\\/]/).pop() ?? "hotkeys.txt",
+    structureFingerprint: snapshot.structureFingerprint,
+    bindings: bindingRecord(snapshot.entries),
+    overwrite,
+  };
+}
+
+async function saveActivePreset(): Promise<void> {
+  if (!snapshot) return;
+  commitManualValue();
+  const preset = activePreset();
+  if (!preset) {
+    await createPreset();
+    return;
+  }
+  const request = presetRequest(preset.name, true);
+  if (!request) return;
+  savePresetButton.disabled = true;
+  try {
+    const summary = await invoke<PresetSummary>("save_preset", { request });
+    activePresetFile = summary.fileName;
+    captureWorkingBaseline();
+    await refreshPresets(selectedPresetFile ?? summary.fileName);
+    updateDirtyState();
+    setStatus(`Đã lưu preset “${summary.name}”${hasUnappliedChanges() ? " · chưa áp dụng vào Spine" : ""}`);
+    toast(`Đã cập nhật preset “${summary.name}”`);
+  } catch (error) {
+    toast(errorMessage(error), "error");
+  } finally {
+    savePresetButton.disabled = false;
+  }
+}
+
 async function createPreset(): Promise<void> {
   if (!snapshot) return;
+  commitManualValue();
   const name = await openDialog({
     title: "Lưu preset mới",
     message: "Đặt tên dễ nhớ cho bộ hotkey hiện tại.",
@@ -536,16 +710,14 @@ async function createPreset(): Promise<void> {
     inputValue: "Preset mới",
   });
   if (typeof name !== "string") return;
-  const request = {
-    name,
-    sourceFile: snapshot.path.split(/[\\/]/).pop() ?? "hotkeys.txt",
-    structureFingerprint: snapshot.structureFingerprint,
-    bindings: bindingRecord(snapshot.entries),
-    overwrite: false,
-  };
+  const request = presetRequest(name, false);
+  if (!request) return;
   try {
     const summary = await invoke<PresetSummary>("save_preset", { request });
+    activePresetFile = summary.fileName;
+    captureWorkingBaseline();
     await refreshPresets(summary.fileName);
+    updateDirtyState();
     toast(`Đã lưu preset “${summary.name}”`);
   } catch (error) {
     if (String(error).startsWith("PRESET_EXISTS:")) {
@@ -557,7 +729,10 @@ async function createPreset(): Promise<void> {
       if (overwrite) {
         request.overwrite = true;
         const summary = await invoke<PresetSummary>("save_preset", { request });
+        activePresetFile = summary.fileName;
+        captureWorkingBaseline();
         await refreshPresets(summary.fileName);
+        updateDirtyState();
         toast(`Đã cập nhật preset “${summary.name}”`);
       }
     } else toast(errorMessage(error), "error");
@@ -586,6 +761,9 @@ async function loadSelectedPreset(): Promise<void> {
         matched += 1;
       }
     });
+    activePresetFile = selectedPresetFile;
+    captureWorkingBaseline();
+    renderPresets();
     refreshTable();
     refreshEditor();
     setStatus(`Đã nạp ${matched} lệnh từ preset`, "warning");
@@ -609,6 +787,7 @@ async function renamePreset(): Promise<void> {
     const summary = await invoke<PresetSummary>("rename_preset", {
       request: { fileName: preset.fileName, newName },
     });
+    if (activePresetFile === preset.fileName) activePresetFile = summary.fileName;
     await refreshPresets(summary.fileName);
     toast(`Đã đổi tên thành “${summary.name}”`);
   } catch (error) {
@@ -649,6 +828,7 @@ async function deletePreset(): Promise<void> {
   if (!confirmed) return;
   try {
     await invoke("delete_preset", { fileName: preset.fileName });
+    if (activePresetFile === preset.fileName) activePresetFile = null;
     selectedPresetFile = null;
     await refreshPresets();
     toast(`Đã xóa preset “${preset.name}”`);
@@ -682,7 +862,8 @@ restoreButton.addEventListener("click", () => {
   refreshTable();
 });
 $("#load-preset-button").addEventListener("click", () => void loadSelectedPreset());
-$("#create-preset-button").addEventListener("click", () => void createPreset());
+savePresetButton.addEventListener("click", () => void saveActivePreset());
+$("#save-as-preset-button").addEventListener("click", () => void createPreset());
 $("#rename-preset-button").addEventListener("click", () => void renamePreset());
 $("#duplicate-preset-button").addEventListener("click", () => void duplicatePreset());
 $("#delete-preset-button").addEventListener("click", () => void deletePreset());
@@ -711,6 +892,11 @@ document.addEventListener(
 );
 
 document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key.toLocaleLowerCase() === "s" && !recording) {
+    event.preventDefault();
+    void saveActivePreset();
+    return;
+  }
   if (event.ctrlKey && event.key.toLocaleLowerCase() === "f" && !recording) {
     event.preventDefault();
     searchInput.focus();
@@ -719,7 +905,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("beforeunload", (event) => {
-  if (isDirty()) event.preventDefault();
+  if (hasUnsavedWork()) event.preventDefault();
 });
 
 void Promise.all([loadDocument(true), refreshPresets()]);

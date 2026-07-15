@@ -175,6 +175,18 @@ h1 {
   box-shadow: 0 0 0 4px rgba(124, 92, 252, 0.13), 0 10px 28px rgba(105, 71, 245, 0.35);
 }
 
+.button-secondary.has-changes {
+  border-color: rgba(124, 92, 252, 0.58);
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.1);
+}
+
+.button-shortcut {
+  margin-left: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 550;
+}
+
 .button-secondary,
 .button-ghost {
   border-color: var(--border);
@@ -272,6 +284,12 @@ h1 {
 .preset-item.selected {
   border-color: rgba(139, 111, 255, 0.38);
   background: var(--accent-soft);
+}
+
+.preset-item.active .preset-mark {
+  background: linear-gradient(145deg, #896cff, #704ff5);
+  box-shadow: 0 5px 14px rgba(105, 71, 245, 0.24);
+  color: white;
 }
 
 .preset-mark {
@@ -538,8 +556,15 @@ input::placeholder {
   border-bottom: 1px solid rgba(38, 49, 70, 0.46);
   background: transparent;
   cursor: pointer;
+  color: inherit;
+  font: inherit;
   text-align: left;
   transition: background 110ms ease, box-shadow 110ms ease;
+}
+
+.hotkey-row:focus-visible {
+  outline: 2px solid rgba(153, 132, 255, 0.82);
+  outline-offset: -2px;
 }
 
 .hotkey-row:nth-child(even) {
@@ -596,18 +621,43 @@ input::placeholder {
 }
 
 .state-cell {
-  color: var(--muted);
-  font-size: 10px;
   text-align: right;
 }
 
-.hotkey-row.conflict .state-cell,
-.hotkey-row.conflict .key-cell kbd {
+.state-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+button.state-chip {
+  cursor: pointer;
+}
+
+button.state-chip:hover {
+  border-color: rgba(255, 116, 108, 0.48);
+  background: rgba(255, 116, 108, 0.18);
+}
+
+.state-chip.conflict {
+  border-color: rgba(255, 116, 108, 0.24);
+  background: rgba(255, 116, 108, 0.11);
   color: #ffaaa5;
 }
 
-.hotkey-row.changed:not(.conflict) .state-cell {
+.state-chip.changed {
+  border-color: rgba(124, 92, 252, 0.28);
+  background: var(--accent-soft);
   color: #b6a7ff;
+}
+
+.hotkey-row.conflict .key-cell kbd {
+  color: #ffaaa5;
 }
 
 .loading-state,
@@ -703,9 +753,45 @@ input::placeholder {
 }
 
 .helper-text {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 8px;
   color: var(--muted);
   font-size: 10px;
+}
+
+.helper-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.helper-action {
+  padding: 4px 8px;
+  border: 1px solid rgba(245, 191, 85, 0.28);
+  border-radius: 8px;
+  background: rgba(245, 191, 85, 0.08);
+  color: var(--amber);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.helper-action:hover {
+  background: rgba(245, 191, 85, 0.15);
+}
+
+.helper-action.danger {
+  border-color: rgba(255, 116, 108, 0.25);
+  background: rgba(255, 116, 108, 0.08);
+  color: #ffaaa5;
+}
+
+.helper-action.danger:hover {
+  background: rgba(255, 116, 108, 0.15);
 }
 
 .helper-text.warning { color: var(--amber); }
