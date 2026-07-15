@@ -39,6 +39,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <button id="save-as-preset-button" class="button button-ghost button-wide" type="button">Lưu thành preset mới…</button>
         <div class="preset-actions">
           <button id="duplicate-preset-button" class="button button-ghost" type="button">Sao chép</button>
+          <button id="restore-default-button" class="button button-danger" type="button">Khôi phục bản gốc</button>
         </div>
       </aside>
 
@@ -120,6 +121,7 @@ const targetPath = $("#target-path");
 const reloadButton = $("#reload-button") as HTMLButtonElement;
 const applyButton = $("#apply-button") as HTMLButtonElement;
 const savePresetButton = $("#save-preset-button") as HTMLButtonElement;
+const restoreDefaultButton = $("#restore-default-button") as HTMLButtonElement;
 const presetList = $("#preset-list");
 const presetMeta = $("#preset-meta");
 const searchInput = $("#search-input") as HTMLInputElement;
@@ -187,7 +189,7 @@ function toast(message: string, tone: "success" | "warning" | "error" = "success
 
 function errorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
-  return raw.replace(/^(SPINE_RUNNING|FILE_CHANGED|PRESET_EXISTS):/, "");
+  return raw.replace(/^(SPINE_RUNNING|FILE_CHANGED|PRESET_EXISTS|DEFAULT_INCOMPATIBLE):/, "");
 }
 
 interface DialogOptions {
@@ -336,7 +338,18 @@ function refreshTable(): void {
     const keycap = document.createElement("kbd");
     keycap.textContent = entry.value || "Chưa gán";
     if (!entry.value) keycap.classList.add("empty");
-    keyCell.append(keycap);
+    const quickRecordButton = document.createElement("button");
+    quickRecordButton.type = "button";
+    quickRecordButton.className = "row-record-button";
+    quickRecordButton.textContent = "Ghi phím";
+    quickRecordButton.setAttribute("aria-label", `Ghi tổ hợp phím cho ${entry.action}`);
+    quickRecordButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectEntry(index);
+      startRecording();
+    });
+    quickRecordButton.addEventListener("dblclick", (event) => event.stopPropagation());
+    keyCell.append(keycap, quickRecordButton);
     const stateCell = document.createElement("span");
     stateCell.className = "state-cell";
     const stateText = conflictIds.has(entry.entryId)
@@ -592,6 +605,39 @@ async function applyChanges(): Promise<void> {
     if (raw.startsWith("FILE_CHANGED:")) await loadDocument(true);
   } finally {
     applyButton.disabled = false;
+  }
+}
+
+async function restoreSpineDefaults(): Promise<void> {
+  if (!snapshot) return;
+  const confirmed = await openDialog({
+    title: "Khôi phục hotkey gốc?",
+    message: "Toàn bộ hotkey sẽ được đưa về mặc định của Spine 3.8.99. Preset đã lưu không bị ảnh hưởng và file hiện tại sẽ được backup.",
+    confirmText: "Khôi phục",
+    danger: true,
+  });
+  if (!confirmed) return;
+  restoreDefaultButton.disabled = true;
+  setStatus("Đang backup và khôi phục hotkey gốc…", "warning");
+  try {
+    const result = await invoke<SaveHotkeysResult>("restore_default_hotkeys", {
+      request: { sourceToken: snapshot.sourceToken },
+    });
+    await loadDocument(true);
+    setStatus(`Đã khôi phục ${result.updatedCount} hotkey về mặc định`);
+    toast("Đã khôi phục hotkey gốc và tạo backup");
+  } catch (error) {
+    const raw = String(error);
+    const message = errorMessage(error);
+    setStatus(message, "error");
+    await openDialog({
+      title: raw.startsWith("SPINE_RUNNING:") ? "Hãy đóng Spine" : "Không thể khôi phục",
+      message,
+      confirmText: "Đã hiểu",
+    });
+    if (raw.startsWith("FILE_CHANGED:")) await loadDocument(true);
+  } finally {
+    restoreDefaultButton.disabled = false;
   }
 }
 
@@ -899,6 +945,7 @@ restoreButton.addEventListener("click", () => {
 savePresetButton.addEventListener("click", () => void saveActivePreset());
 $("#save-as-preset-button").addEventListener("click", () => void createPreset());
 $("#duplicate-preset-button").addEventListener("click", () => void duplicatePreset());
+restoreDefaultButton.addEventListener("click", () => void restoreSpineDefaults());
 
 document.addEventListener(
   "keydown",

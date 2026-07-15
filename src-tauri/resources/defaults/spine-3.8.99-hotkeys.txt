@@ -1,0 +1,265 @@
+--- General ---
+Undo: ctrl + Z
+Redo: ctrl + shift + Z
+Redo: ctrl + Y
+Setup/Animate Mode: ctrl + TAB
+Rulers: ctrl + shift + R
+Zoom To Fit: ctrl + shift + F
+Zoom To 100%: ctrl + F
+Lock Zoom: 
+Fullscreen: ctrl + shift + alt + F
+Always On Top: ctrl + shift + alt + T
+Instant Tooltips: F1
+Hotkey Popups: ctrl + shift + K
+Pan Drag: J
+Zoom Drag: U
+Pan Move: 
+Zoom Move: 
+Top: HOME
+Bottom: END
+Focus - Dopesheet: 
+Focus - Tree: 
+Focus - Viewport: 
+--- Views ---
+Minimize Views: F9
+Animations View: alt + A
+Audio View: alt + U
+Dopesheet View: alt + D
+Ghosting View: alt + H
+Graph View: alt + G
+Metrics View: alt + M
+Mesh Tools View: alt + E
+Outline View: alt + O
+Playback View: alt + P
+Preview View: alt + R
+Skins View: alt + S
+Slot Color View: alt + C
+Timeline View: alt + L
+Tree View: alt + T
+Weights View: alt + W
+--- Tools ---
+Shear Tool: Z
+Scale Tool: X
+Rotate Tool: C
+Translate Tool: V
+Pose Tool: B
+Create Tool: N
+Weights Tool: G
+Last Tool: 
+Local Axes: 
+Parent Axes: 
+World Axes: 
+Bone Compensation: 
+Image Compensation: 
+Nudge Up: shift + UP
+Nudge Up (10): UP
+Nudge Down: shift + DOWN
+Nudge Down (10): DOWN
+Nudge Left: shift + LEFT
+Nudge Left (10): LEFT
+Nudge Right: shift + RIGHT
+Nudge Right (10): RIGHT
+Brush Increase: '''
+Brush Increase (10): shift + '"'
+Brush Decrease: ';'
+Brush Decrease (10): shift + ':'
+Feather Increase: 
+Feather Increase (10): 
+Feather Decrease: 
+Feather Decrease (10): 
+Weights - Strength Increase: 
+Weights - Strength Increase (10): 
+Weights - Strength Decrease: 
+Weights - Strength Decrease (10): 
+--- Options ---
+Select Bones: ctrl + shift + B
+Show Bones: ctrl + B
+Bone Names: ctrl + shift + alt + B
+Select Images: ctrl + shift + I
+Show Images: ctrl + I
+Image Names: ctrl + shift + alt + I
+Select Others: 
+Show Others: 
+Other Names: 
+Auto Scroll: ctrl + SLASH
+Scroll To Selected: SLASH
+--- Selection ---
+Deselect: SPACE
+Deselect: ESCAPE
+Select All: ctrl + A
+Select - Bones: 
+Select - Child Bones: 
+Select - Descendant Bones: 
+Select - Slots: 
+Select - Attachments: 
+Select - Visible Attachments: 
+Select - Draw Order: 
+Previous Selection: PAGE_DOWN
+Next Selection: PAGE_UP
+Hide Selection: 
+Store Selection 0: ctrl + 0
+Store Selection 1: ctrl + 1
+Store Selection 2: ctrl + 2
+Store Selection 3: ctrl + 3
+Store Selection 4: ctrl + 4
+Store Selection 5: ctrl + 5
+Store Selection 6: ctrl + 6
+Store Selection 7: ctrl + 7
+Store Selection 8: ctrl + 8
+Store Selection 9: ctrl + 9
+Set Selection 0: 0
+Set Selection 1: 1
+Set Selection 2: 2
+Set Selection 3: 3
+Set Selection 4: 4
+Set Selection 5: 5
+Set Selection 6: 6
+Set Selection 7: 7
+Set Selection 8: 8
+Set Selection 9: 9
+Add Selection 0: shift + 0
+Add Selection 1: shift + 1
+Add Selection 2: shift + 2
+Add Selection 3: shift + 3
+Add Selection 4: shift + 4
+Add Selection 5: shift + 5
+Add Selection 6: shift + 6
+Add Selection 7: shift + 7
+Add Selection 8: shift + 8
+Add Selection 9: shift + 9
+Cut: ctrl + X
+Cut: shift + DELETE
+Copy: ctrl + C
+Copy: ctrl + INSERT
+Paste: ctrl + V
+Paste: shift + INSERT
+Delete: DELETE
+Delete: BACKSPACE
+Rename: F2
+Duplicate: ctrl + D
+Visibility: H
+Show All Bones/Slots: ctrl + H
+Draw Order Down: MINUS
+Draw Order Down (5): shift + MINUS
+Draw Order Up: PLUS
+Draw Order Up: EQUALS
+Draw Order Up (5): shift + PLUS
+Draw Order Up (5): shift + EQUALS
+--- Tree ---
+Replace: F4
+Parent: ctrl + shift + UP
+Child: ctrl + shift + DOWN
+Previous Sibling: ctrl + shift + LEFT
+Next Sibling: ctrl + shift + RIGHT
+Expand/Collapse: ctrl + shift + ENTER
+Parent Bone: ctrl + UP
+Child Bone: ctrl + DOWN
+Previous Sibling Bone: ctrl + LEFT
+Next Sibling Bone: ctrl + RIGHT
+Tree Up: alt + UP
+Tree Down: alt + DOWN
+Collapse: alt + LEFT
+Expand: alt + RIGHT
+Search: ENTER
+Search - Next: F3
+Search - Previous: shift + F3
+Search - Select All: ctrl + ENTER
+Search - Clear: 
+Tree Filter: 
+--- Menu ---
+Main Menu: alt + F
+New Project: ctrl + shift + N
+Open Project: ctrl + O
+Open Project (Browse): ctrl + shift + O
+Save Project: ctrl + S
+Save Project As: ctrl + shift + S
+New Skeleton: ctrl + N
+Import Project: 
+Import Data: 
+Export: ctrl + E
+Repeat Last Export: ctrl + shift + E
+Texture Packer: ctrl + P
+Repeat Last Texture Packer: ctrl + shift + P
+Texture Unpacker: 
+Settings: F12
+--- General ---
+Next Skin: PERIOD
+Previous Skin: COMMA
+--- Setup Mode ---
+Set Parent: P
+--- New ---
+New Bone: 
+New Slot: 
+New Skin Placeholder: 
+New Bounding Box: 
+New Path: 
+New Clipping: 
+New Animation: 
+New Event: 
+New Skin: 
+New IK Constraint: 
+New Transform Constraint: 
+New Path Constraint: 
+New Folder: 
+--- Attachments ---
+Color: M
+Mesh - Freeze: 
+Mesh - Reset: 
+Mesh - Edit Mesh: 
+Edit Mesh - Modify: 
+Edit Mesh - Create: 
+Edit Mesh - Delete: 
+Edit Mesh - New: 
+Edit Mesh - Reset: 
+Edit Mesh - Generate: 
+Edit Mesh - Trace: 
+Edit Mesh - Triangles: 
+Edit Mesh - Dim: 
+Edit Mesh - Isolate: 
+Edit Mesh - Deformed: TAB
+--- Animate Mode ---
+Next Animation: Y
+Previous Animation: T
+Auto Key: ctrl + shift + A
+Lock Dopesheet: 
+Refresh Dopesheet: 
+Select Dopesheet Bones: 
+Dopesheet Filter: 
+Key Shift: 
+Adjust Keys: 
+Offset Keys: 
+Current: 
+Set Loop Start: LEFT_BRACKET
+Set Loop End: RIGHT_BRACKET
+Ghosting: I
+--- Keying ---
+Key Edited: K
+Key Active: L
+Key Selected: ctrl + L
+Key Dopesheet: ctrl + shift + L
+Key Translation: 
+Key Rotation: 
+Key Scale: 
+Key Shear: 
+Key Color: 
+Key Attachment: 
+Select Keys: 
+--- Playback ---
+Play Forward: D
+Play Backward: A
+Stop: 
+Repeat: ctrl + R
+Stepped: 
+First Key: Q
+Last Key: E
+Next Key: 'W'
+Previous Key: 'S'
+Next Frame: 'R'
+Next Frame (10): shift + 'R'
+Previous Frame: 'F'
+Previous Frame (10): shift + 'F'
+Loop Start: ctrl + LEFT_BRACKET
+Loop End: ctrl + RIGHT_BRACKET
+Speed - Slower: 
+Speed - Faster: 
+Speed - 100%: 

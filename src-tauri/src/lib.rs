@@ -9,6 +9,8 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 
 const PRESET_FORMAT_VERSION: u8 = 1;
+const SPINE_38_DEFAULT_HOTKEYS: &[u8] =
+    include_bytes!("../resources/defaults/spine-3.8.99-hotkeys.txt");
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +48,12 @@ struct HotkeySnapshot {
 struct SaveHotkeysRequest {
     source_token: String,
     bindings: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreDefaultHotkeysRequest {
+    source_token: String,
 }
 
 #[derive(Serialize)]
@@ -127,9 +135,50 @@ fn save_hotkeys(app: AppHandle, request: SaveHotkeysRequest) -> Result<SaveHotke
     }
 
     let mut document = HotkeyDocument::parse(&bytes)?;
+    let updated_count = apply_bindings(&mut document, &request.bindings);
+    persist_hotkey_document(&app, &path, &document, updated_count)
+}
+
+#[tauri::command]
+fn restore_default_hotkeys(
+    app: AppHandle,
+    request: RestoreDefaultHotkeysRequest,
+) -> Result<SaveHotkeysResult, String> {
+    if is_spine_running() {
+        return Err("SPINE_RUNNING:Hãy đóng Spine hoàn toàn trước khi khôi phục hotkey.".into());
+    }
+
+    let path = hotkey_path(&app)?;
+    let bytes = fs::read(&path).map_err(|error| format!("Không thể đọc hotkeys.txt: {error}"))?;
+    if hash_bytes(&bytes) != request.source_token {
+        return Err(
+            "FILE_CHANGED:hotkeys.txt đã được chương trình khác thay đổi. Hãy tải lại trước khi khôi phục."
+                .into(),
+        );
+    }
+
+    let mut document = HotkeyDocument::parse(&bytes)?;
+    let default_document = HotkeyDocument::parse(SPINE_38_DEFAULT_HOTKEYS)
+        .map_err(|error| format!("Không thể đọc preset mặc định tích hợp: {error}"))?;
+    if document.structure_fingerprint() != default_document.structure_fingerprint() {
+        return Err(
+            "DEFAULT_INCOMPATIBLE:Preset mặc định tích hợp chỉ hỗ trợ cấu trúc hotkey Spine 3.8.99. File hiện tại không tương thích."
+                .into(),
+        );
+    }
+    let bindings = default_document
+        .entries
+        .into_iter()
+        .map(|entry| (entry.entry_id, entry.value))
+        .collect();
+    let updated_count = apply_bindings(&mut document, &bindings);
+    persist_hotkey_document(&app, &path, &document, updated_count)
+}
+
+fn apply_bindings(document: &mut HotkeyDocument, bindings: &BTreeMap<String, String>) -> usize {
     let mut updated_count = 0;
     for entry in &mut document.entries {
-        if let Some(value) = request.bindings.get(&entry.entry_id) {
+        if let Some(value) = bindings.get(&entry.entry_id) {
             let cleaned = clean_hotkey(value);
             if entry.value != cleaned {
                 updated_count += 1;
@@ -137,7 +186,15 @@ fn save_hotkeys(app: AppHandle, request: SaveHotkeysRequest) -> Result<SaveHotke
             }
         }
     }
+    updated_count
+}
 
+fn persist_hotkey_document(
+    app: &AppHandle,
+    path: &Path,
+    document: &HotkeyDocument,
+    updated_count: usize,
+) -> Result<SaveHotkeysResult, String> {
     let backup_dir = data_dir(&app)?.join("backups");
     fs::create_dir_all(&backup_dir)
         .map_err(|error| format!("Không thể tạo thư mục backup: {error}"))?;
@@ -146,7 +203,7 @@ fn save_hotkeys(app: AppHandle, request: SaveHotkeysRequest) -> Result<SaveHotke
     fs::copy(&path, &backup_path).map_err(|error| format!("Không thể tạo backup: {error}"))?;
 
     let output = document.render().into_bytes();
-    write_atomic(&path, &output)?;
+    write_atomic(path, &output)?;
     Ok(SaveHotkeysResult {
         source_token: hash_bytes(&output),
         backup_path: backup_path.to_string_lossy().into_owned(),
@@ -604,6 +661,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_hotkeys,
             save_hotkeys,
+            restore_default_hotkeys,
             list_presets,
             load_preset,
             save_preset,
@@ -659,6 +717,34 @@ mod tests {
         assert!(is_spine_process_name("Spine-4.2.17.exe"));
         assert!(!is_spine_process_name("spine-hotkey-studio.exe"));
         assert!(!is_spine_process_name("spine-launcher.exe"));
+    }
+
+    #[test]
+    fn bundled_spine_38_defaults_restore_changed_bindings() {
+        let default_document = HotkeyDocument::parse(SPINE_38_DEFAULT_HOTKEYS).unwrap();
+        let bindings: BTreeMap<String, String> = default_document
+            .entries
+            .iter()
+            .map(|entry| (entry.entry_id.clone(), entry.value.clone()))
+            .collect();
+        let mut customized = HotkeyDocument::parse(SPINE_38_DEFAULT_HOTKEYS).unwrap();
+        let shear = customized
+            .entries
+            .iter_mut()
+            .find(|entry| entry.action == "Shear Tool")
+            .unwrap();
+        shear.value = "Q".into();
+
+        assert_eq!(apply_bindings(&mut customized, &bindings), 1);
+        assert_eq!(
+            customized
+                .entries
+                .iter()
+                .find(|entry| entry.action == "Shear Tool")
+                .unwrap()
+                .value,
+            "Z"
+        );
     }
 
     #[test]
