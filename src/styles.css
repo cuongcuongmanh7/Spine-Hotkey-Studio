@@ -435,6 +435,9 @@ input::placeholder {
 }
 
 .toggle-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   min-width: 138px;
   flex: 0 0 auto;
   gap: 8px;
@@ -448,7 +451,13 @@ input::placeholder {
   position: absolute;
   width: 1px;
   height: 1px;
-  opacity: 0;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .toggle {
@@ -477,6 +486,11 @@ input::placeholder {
 .toggle-label input:checked + .toggle {
   border-color: var(--accent);
   background: var(--accent);
+}
+
+.toggle-label input:focus-visible + .toggle {
+  outline: 2px solid rgba(153, 132, 255, 0.82);
+  outline-offset: 2px;
 }
 
 .toggle-label input:checked + .toggle::after {
